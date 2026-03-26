@@ -1,0 +1,5 @@
+# Dependências Nativas do Laboratório de Máquinas Matemáticas
+pandas>=2.0.0
+numpy>=1.20.0
+requests>=2.28.0
+matplotlib>=3.7.0

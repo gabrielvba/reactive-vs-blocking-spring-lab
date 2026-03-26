@@ -1,0 +1,43 @@
+global:
+  scrape_interval: 10s
+  evaluation_interval: 10s
+
+scrape_configs:
+  - job_name: 'ms-files-managment'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets:
+          - 'ms-files-managment:8080'
+        labels:
+          application: 'ms-files-managment'
+  - job_name: 'ms-files-management-reactive'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets:
+          - 'ms-files-management-reactive:8083'
+        labels:
+          application: 'ms-files-management-reactive'
+  - job_name: 'ms-producer-picture'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets:
+          - 'ms-producer-picture:8081'
+        labels:
+          application: 'ms-producer-picture'
+
+  - job_name: 'prometheus'
+    static_configs:
+      - targets:
+          - 'prometheus:9090'
+
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets:
+          - 'cadvisor:8080'
+
+  - job_name: 'k6'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets:
+          - 'ms-files-managment:9568'
+

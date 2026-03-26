@@ -1,0 +1,397 @@
+{
+  "info": {
+    "_postman_id": "b8132c41-6c3e-4a3e-9f31-0c20c54bb76b",
+    "name": "ms-producer-picture",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "cursor-ai"
+  },
+  "item": [
+    {
+      "name": "Base64",
+      "item": [
+        {
+          "name": "low-99kb (Base64)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/image/base64/low-99kb",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "image",
+                "base64",
+                "low-99kb"
+              ]
+            }
+          }
+        },
+        {
+          "name": "low-394kb (Base64)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/image/base64/low-394kb",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "image",
+                "base64",
+                "low-394kb"
+              ]
+            }
+          }
+        },
+        {
+          "name": "low-542kb (Base64)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/image/base64/low-542kb",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "image",
+                "base64",
+                "low-542kb"
+              ]
+            }
+          }
+        },
+        {
+          "name": "low-1018kb (Base64)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/image/base64/low-1018kb",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "image",
+                "base64",
+                "low-1018kb"
+              ]
+            }
+          }
+        },
+        {
+          "name": "medium-2445kb (Base64)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/image/base64/medium-2445kb",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "image",
+                "base64",
+                "medium-2445kb"
+              ]
+            }
+          }
+        },
+        {
+          "name": "high-6144kb (Base64)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/image/base64/high-6144kb",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "image",
+                "base64",
+                "high-6144kb"
+              ]
+            }
+          }
+        },
+        {
+          "name": "high-7680kb (Base64)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/image/base64/high-7680kb",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "image",
+                "base64",
+                "high-7680kb"
+              ]
+            }
+          }
+        },
+        {
+          "name": "high-7833kb (Base64)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/image/base64/high-7833kb",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "image",
+                "base64",
+                "high-7833kb"
+              ]
+            }
+          }
+        },
+        {
+          "name": "ultra-11883kb (Base64)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/image/base64/ultra-11883kb",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "image",
+                "base64",
+                "ultra-11883kb"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Raw",
+      "item": [
+        {
+          "name": "low-99kb (Raw)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/image/raw/low-99kb",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "image",
+                "raw",
+                "low-99kb"
+              ]
+            }
+          }
+        },
+        {
+          "name": "low-394kb (Raw)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/image/raw/low-394kb",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "image",
+                "raw",
+                "low-394kb"
+              ]
+            }
+          }
+        },
+        {
+          "name": "low-542kb (Raw)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/image/raw/low-542kb",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "image",
+                "raw",
+                "low-542kb"
+              ]
+            }
+          }
+        },
+        {
+          "name": "low-1018kb (Raw)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/image/raw/low-1018kb",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "image",
+                "raw",
+                "low-1018kb"
+              ]
+            }
+          }
+        },
+        {
+          "name": "medium-2445kb (Raw)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/image/raw/medium-2445kb",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "image",
+                "raw",
+                "medium-2445kb"
+              ]
+            }
+          }
+        },
+        {
+          "name": "high-6144kb (Raw)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/image/raw/high-6144kb",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "image",
+                "raw",
+                "high-6144kb"
+              ]
+            }
+          }
+        },
+        {
+          "name": "high-7680kb (Raw)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/image/raw/high-7680kb",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "image",
+                "raw",
+                "high-7680kb"
+              ]
+            }
+          }
+        },
+        {
+          "name": "high-7833kb (Raw)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/image/raw/high-7833kb",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "image",
+                "raw",
+                "high-7833kb"
+              ]
+            }
+          }
+        },
+        {
+          "name": "ultra-11883kb (Raw)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/image/raw/ultra-11883kb",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "image",
+                "raw",
+                "ultra-11883kb"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8081",
+      "type": "string"
+    }
+  ]
+}
+

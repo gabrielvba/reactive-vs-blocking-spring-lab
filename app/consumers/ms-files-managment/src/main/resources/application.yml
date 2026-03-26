@@ -1,0 +1,67 @@
+spring:
+  application:
+    name: ms-files-managment
+  jmx:
+    enabled: true
+  threads:
+    virtual:
+      enabled: true
+
+  # ========================================
+  # NOVAS CONFIGURAÇÕES (COMENTADAS - Analise antes de habilitar)
+  # ========================================
+  
+  ## Configurações para limitar uploads de arquivos
+  #servlet:
+  #  multipart:
+  #    enabled: true
+  #    max-file-size: 15MB           # Limite por arquivo
+  #    max-request-size: 20MB        # Limite total da requisição
+  #    file-size-threshold: 2KB      # Arquivos > 2KB vão para disco (não memória)
+  #    location: ${java.io.tmpdir}   # Onde salvar temporariamente
+
+file:
+  service:
+    base-url: http://ms-producer-picture:8081
+
+server:
+  port: 8080
+  tomcat:
+    mbeanregistry:
+      enabled: true
+    # Limites de threads e conexões
+    threads:
+      max: 200                      # Máximo de threads de trabalho
+      min-spare: 10                 # Threads mínimas sempre ativas
+    max-connections: 8192           # Máximo de conexões TCP simultâneas
+    accept-count: 100               # Fila quando max-connections é atingido
+    connection-timeout: 30000       # Timeout em millisegundos (30s)
+    max-http-form-post-size: 20971520  # 20MB para form POST
+    max-swallow-size: 20971520      # 20MB para requisições rejeitadas
+  
+  # Compressão de resposta (GZIP)
+  compression:
+    enabled: true
+    mime-types: application/json,application/octet-stream,text/plain,text/html
+    min-response-size: 1024         # Comprimir respostas > 1KB
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http:
+          server:
+            requests: true
+    tags:
+      application: ${spring.application.name}
+    enable:
+      jvm: true
+      tomcat: true
+

@@ -1,0 +1,441 @@
+{
+  "info": {
+    "_postman_id": "e0eab195-4022-42ca-97c7-8d9d7616fbe6",
+    "name": "ms-files-managment",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "cursor-ai"
+  },
+  "item": [
+    {
+      "name": "Base64 (response in JSON)",
+      "item": [
+        {
+          "name": "low-99kb via base64 flow",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Flow", "value": "base64" }
+            ],
+            "url": { "raw": "{{baseUrl}}/file/base64/low-99kb", "host": ["{{baseUrl}}"], "path": ["file","base64","low-99kb"] }
+          }
+        },
+        {
+          "name": "low-99kb via image flow",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Flow", "value": "image" }
+            ],
+            "url": { "raw": "{{baseUrl}}/file/base64/low-99kb", "host": ["{{baseUrl}}"], "path": ["file","base64","low-99kb"] }
+          }
+        },
+        {
+          "name": "low-394kb via base64 flow",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Flow", "value": "base64" }
+            ],
+            "url": { "raw": "{{baseUrl}}/file/base64/low-394kb", "host": ["{{baseUrl}}"], "path": ["file","base64","low-394kb"] }
+          }
+        },
+        {
+          "name": "low-394kb via image flow",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Flow", "value": "image" }
+            ],
+            "url": { "raw": "{{baseUrl}}/file/base64/low-394kb", "host": ["{{baseUrl}}"], "path": ["file","base64","low-394kb"] }
+          }
+        },
+        {
+          "name": "low-542kb via base64 flow",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Flow", "value": "base64" }
+            ],
+            "url": { "raw": "{{baseUrl}}/file/base64/low-542kb", "host": ["{{baseUrl}}"], "path": ["file","base64","low-542kb"] }
+          }
+        },
+        {
+          "name": "low-542kb via image flow",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Flow", "value": "image" }
+            ],
+            "url": { "raw": "{{baseUrl}}/file/base64/low-542kb", "host": ["{{baseUrl}}"], "path": ["file","base64","low-542kb"] }
+          }
+        },
+        {
+          "name": "low-1018kb via base64 flow",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Flow", "value": "base64" }
+            ],
+            "url": { "raw": "{{baseUrl}}/file/base64/low-1018kb", "host": ["{{baseUrl}}"], "path": ["file","base64","low-1018kb"] }
+          }
+        },
+        {
+          "name": "low-1018kb via image flow",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Flow", "value": "image" }
+            ],
+            "url": { "raw": "{{baseUrl}}/file/base64/low-1018kb", "host": ["{{baseUrl}}"], "path": ["file","base64","low-1018kb"] }
+          }
+        },
+        {
+          "name": "medium-2445kb via base64 flow",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Flow", "value": "base64" }
+            ],
+            "url": { "raw": "{{baseUrl}}/file/base64/medium-2445kb", "host": ["{{baseUrl}}"], "path": ["file","base64","medium-2445kb"] }
+          }
+        },
+        {
+          "name": "medium-2445kb via image flow",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Flow", "value": "image" }
+            ],
+            "url": { "raw": "{{baseUrl}}/file/base64/medium-2445kb", "host": ["{{baseUrl}}"], "path": ["file","base64","medium-2445kb"] }
+          }
+        },
+        {
+          "name": "high-6144kb via base64 flow",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Flow", "value": "base64" }
+            ],
+            "url": { "raw": "{{baseUrl}}/file/base64/high-6144kb", "host": ["{{baseUrl}}"], "path": ["file","base64","high-6144kb"] }
+          }
+        },
+        {
+          "name": "high-6144kb via image flow",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Flow", "value": "image" }
+            ],
+            "url": { "raw": "{{baseUrl}}/file/base64/high-6144kb", "host": ["{{baseUrl}}"], "path": ["file","base64","high-6144kb"] }
+          }
+        },
+        {
+          "name": "high-7680kb via base64 flow",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Flow", "value": "base64" }
+            ],
+            "url": { "raw": "{{baseUrl}}/file/base64/high-7680kb", "host": ["{{baseUrl}}"], "path": ["file","base64","high-7680kb"] }
+          }
+        },
+        {
+          "name": "high-7680kb via image flow",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Flow", "value": "image" }
+            ],
+            "url": { "raw": "{{baseUrl}}/file/base64/high-7680kb", "host": ["{{baseUrl}}"], "path": ["file","base64","high-7680kb"] }
+          }
+        },
+        {
+          "name": "high-7833kb via base64 flow",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Flow", "value": "base64" }
+            ],
+            "url": { "raw": "{{baseUrl}}/file/base64/high-7833kb", "host": ["{{baseUrl}}"], "path": ["file","base64","high-7833kb"] }
+          }
+        },
+        {
+          "name": "high-7833kb via image flow",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Flow", "value": "image" }
+            ],
+            "url": { "raw": "{{baseUrl}}/file/base64/high-7833kb", "host": ["{{baseUrl}}"], "path": ["file","base64","high-7833kb"] }
+          }
+        },
+        {
+          "name": "ultra-11883kb via base64 flow",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Flow", "value": "base64" }
+            ],
+            "url": { "raw": "{{baseUrl}}/file/base64/ultra-11883kb", "host": ["{{baseUrl}}"], "path": ["file","base64","ultra-11883kb"] }
+          }
+        },
+        {
+          "name": "ultra-11883kb via image flow",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Flow", "value": "image" }
+            ],
+            "url": { "raw": "{{baseUrl}}/file/base64/ultra-11883kb", "host": ["{{baseUrl}}"], "path": ["file","base64","ultra-11883kb"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Raw (response in binary)",
+      "item": [
+        {
+          "name": "low-99kb via image flow",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Flow", "value": "image" }
+            ],
+            "url": { "raw": "{{baseUrl}}/file/raw/low-99kb", "host": ["{{baseUrl}}"], "path": ["file","raw","low-99kb"] }
+          }
+        },
+        {
+          "name": "low-99kb via base64 flow",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Flow", "value": "base64" }
+            ],
+            "url": { "raw": "{{baseUrl}}/file/raw/low-99kb", "host": ["{{baseUrl}}"], "path": ["file","raw","low-99kb"] }
+          }
+        },
+        {
+          "name": "low-394kb via image flow",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Flow", "value": "image" }
+            ],
+            "url": { "raw": "{{baseUrl}}/file/raw/low-394kb", "host": ["{{baseUrl}}"], "path": ["file","raw","low-394kb"] }
+          }
+        },
+        {
+          "name": "low-394kb via base64 flow",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Flow", "value": "base64" }
+            ],
+            "url": { "raw": "{{baseUrl}}/file/raw/low-394kb", "host": ["{{baseUrl}}"], "path": ["file","raw","low-394kb"] }
+          }
+        },
+        {
+          "name": "low-542kb via image flow",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Flow", "value": "image" }
+            ],
+            "url": { "raw": "{{baseUrl}}/file/raw/low-542kb", "host": ["{{baseUrl}}"], "path": ["file","raw","low-542kb"] }
+          }
+        },
+        {
+          "name": "low-542kb via base64 flow",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Flow", "value": "base64" }
+            ],
+            "url": { "raw": "{{baseUrl}}/file/raw/low-542kb", "host": ["{{baseUrl}}"], "path": ["file","raw","low-542kb"] }
+          }
+        },
+        {
+          "name": "low-1018kb via image flow",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Flow", "value": "image" }
+            ],
+            "url": { "raw": "{{baseUrl}}/file/raw/low-1018kb", "host": ["{{baseUrl}}"], "path": ["file","raw","low-1018kb"] }
+          }
+        },
+        {
+          "name": "low-1018kb via base64 flow",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Flow", "value": "base64" }
+            ],
+            "url": { "raw": "{{baseUrl}}/file/raw/low-1018kb", "host": ["{{baseUrl}}"], "path": ["file","raw","low-1018kb"] }
+          }
+        },
+        {
+          "name": "medium-2445kb via image flow",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Flow", "value": "image" }
+            ],
+            "url": { "raw": "{{baseUrl}}/file/raw/medium-2445kb", "host": ["{{baseUrl}}"], "path": ["file","raw","medium-2445kb"] }
+          }
+        },
+        {
+          "name": "medium-2445kb via base64 flow",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Flow", "value": "base64" }
+            ],
+            "url": { "raw": "{{baseUrl}}/file/raw/medium-2445kb", "host": ["{{baseUrl}}"], "path": ["file","raw","medium-2445kb"] }
+          }
+        },
+        {
+          "name": "high-6144kb via image flow",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Flow", "value": "image" }
+            ],
+            "url": { "raw": "{{baseUrl}}/file/raw/high-6144kb", "host": ["{{baseUrl}}"], "path": ["file","raw","high-6144kb"] }
+          }
+        },
+        {
+          "name": "high-6144kb via base64 flow",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Flow", "value": "base64" }
+            ],
+            "url": { "raw": "{{baseUrl}}/file/raw/high-6144kb", "host": ["{{baseUrl}}"], "path": ["file","raw","high-6144kb"] }
+          }
+        },
+        {
+          "name": "high-7680kb via image flow",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Flow", "value": "image" }
+            ],
+            "url": { "raw": "{{baseUrl}}/file/raw/high-7680kb", "host": ["{{baseUrl}}"], "path": ["file","raw","high-7680kb"] }
+          }
+        },
+        {
+          "name": "high-7680kb via base64 flow",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Flow", "value": "base64" }
+            ],
+            "url": { "raw": "{{baseUrl}}/file/raw/high-7680kb", "host": ["{{baseUrl}}"], "path": ["file","raw","high-7680kb"] }
+          }
+        },
+        {
+          "name": "high-7833kb via image flow",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Flow", "value": "image" }
+            ],
+            "url": { "raw": "{{baseUrl}}/file/raw/high-7833kb", "host": ["{{baseUrl}}"], "path": ["file","raw","high-7833kb"] }
+          }
+        },
+        {
+          "name": "high-7833kb via base64 flow",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Flow", "value": "base64" }
+            ],
+            "url": { "raw": "{{baseUrl}}/file/raw/high-7833kb", "host": ["{{baseUrl}}"], "path": ["file","raw","high-7833kb"] }
+          }
+        },
+        {
+          "name": "ultra-11883kb via image flow",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Flow", "value": "image" }
+            ],
+            "url": { "raw": "{{baseUrl}}/file/raw/ultra-11883kb", "host": ["{{baseUrl}}"], "path": ["file","raw","ultra-11883kb"] }
+          }
+        },
+        {
+          "name": "ultra-11883kb via base64 flow",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Flow", "value": "base64" }
+            ],
+            "url": { "raw": "{{baseUrl}}/file/raw/ultra-11883kb", "host": ["{{baseUrl}}"], "path": ["file","raw","ultra-11883kb"] }
+          }
+        }
+      ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          ""
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          ""
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "id",
+      "value": "low-1018kb",
+      "type": "string"
+    },
+    {
+      "key": "flowBase64",
+      "value": "base64",
+      "type": "string"
+    },
+    {
+      "key": "flowRaw",
+      "value": "image",
+      "type": "string"
+    }
+  ]
+}
+

@@ -1,0 +1,73 @@
+spring:
+  application:
+    name: ms-producer-picture
+  jmx:
+    enabled: true
+  threads:
+    virtual:
+      enabled: true
+
+server:
+  port: 8081
+  tomcat:
+    mbeanregistry:
+      enabled: true
+    threads:
+      max: 400
+      min-spare: 20
+    max-connections: 10000
+    accept-count: 200
+  
+  # Compressão de resposta (GZIP)
+  compression:
+    enabled: true
+    mime-types: application/json,application/octet-stream,text/plain,image/jpeg,image/png
+    min-response-size: 1024         # Comprimir respostas > 1KB
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http:
+          server:
+            requests: true
+    tags:
+      application: ${spring.application.name}
+    enable:
+      tomcat: true
+
+image:
+  files:
+    binary:
+      low-99kb: classpath:static/images/low-99kb.jpg
+      low-394kb: classpath:static/images/low-394kb.jpg
+      low-542kb: classpath:static/images/low-542kb.jpg
+      low-1018kb: classpath:static/images/low-1018kb.jpg
+      medium-2445kb: classpath:static/images/medium-2445kb.jpg
+      high-6144kb: classpath:static/images/high-6144kb.jpg
+      high-7680kb: classpath:static/images/high-7680kb.jpg
+      high-7833kb: classpath:static/images/high-7833kb.jpg
+      ultra-11883kb: classpath:static/images/ultra-11883kb.jpg
+    base64:
+      low-99kb: classpath:static/images-base64/low-99kb.base64
+      low-394kb: classpath:static/images-base64/low-394kb.base64
+      low-542kb: classpath:static/images-base64/low-542kb.base64
+      low-1018kb: classpath:static/images-base64/low-1018kb.base64
+      medium-2445kb: classpath:static/images-base64/medium-2445kb.base64
+      high-6144kb: classpath:static/images-base64/high-6144kb.base64
+      high-7680kb: classpath:static/images-base64/high-7680kb.base64
+      high-7833kb: classpath:static/images-base64/high-7833kb.base64
+      ultra-11883kb: classpath:static/images-base64/ultra-11883kb.base64
+
+producer:
+  simulation:
+    delay-enabled: true
+    delay-ms: 1000
+

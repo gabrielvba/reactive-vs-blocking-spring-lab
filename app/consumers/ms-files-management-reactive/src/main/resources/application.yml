@@ -1,0 +1,57 @@
+spring:
+  application:
+    name: ms-files-management-reactive
+  jmx:
+    enabled: true
+  threads:
+    virtual:
+      enabled: true
+
+  # ========================================
+  # NOVAS CONFIGURAÇÕES (COMENTADAS - Analise antes de habilitar)
+  # ========================================
+  
+  ## Configurações para limitar uploads de arquivos
+  #servlet:
+  #  multipart:
+  #    enabled: true
+  #    max-file-size: 15MB           # Limite por arquivo
+  #    max-request-size: 20MB        # Limite total da requisição
+  #    file-size-threshold: 2KB      # Arquivos > 2KB vão para disco (não memória)
+  #    location: ${java.io.tmpdir}   # Onde salvar temporariamente
+
+file:
+  service:
+    base-url: http://ms-producer-picture:8081
+
+server:
+  port: 8083
+  
+  # Compressão: JSON (base64) comprime bem. Imagens raw (octet-stream) já vêm comprimidas
+  # (JPEG/PNG); gzip do binário gasta CPU no Netty sem ganho relevante e piora latência sob stress.
+  compression:
+    enabled: true
+    mime-types: application/json,text/plain,text/html
+    min-response-size: 1024
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http:
+          server:
+            requests: true
+    tags:
+      application: ${spring.application.name}
+    enable:
+      jvm: true
+      tomcat: false  # Reativo: usa Netty, nao Tomcat
+      reactor.netty: true
+
