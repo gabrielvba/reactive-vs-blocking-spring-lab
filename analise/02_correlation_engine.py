@@ -44,8 +44,21 @@ def main():
     # Teorema de Redução Analítica: Se dois contadores (ex: jvm_memory_used e jvm_memory_committed) sobem e descem 
     # de forma estatisticamente rigorosamente igual (Correlação > 0.95), um deles não acrescenta nenhum valor matemático 
     # pro humano no relatório e deve ser brutalmente sumariado (Drop Redundancy).
+
+    # Correção Matemática (Ponto A): Contadores monotônicos (que sobem infinitamente) causam 99% de correlação falsa.
+    # Devemos calcular a correlação da Taxa de Variação (First Difference) para eles.
+    diff_df = num_df.copy()
+    # Agrupar por rodada de teste (meta_run_name) para não criar picos artificiais nas fronteiras dos testes
+    if 'meta_run_name' in df.columns:
+        for col in diff_df.columns:
+            if col.endswith('_total') or col.endswith('_count') or col.endswith('_sum'):
+                diff_df[col] = df.groupby('meta_run_name')[col].diff().fillna(0)
+    else:
+        for col in diff_df.columns:
+            if col.endswith('_total') or col.endswith('_count') or col.endswith('_sum'):
+                diff_df[col] = diff_df[col].diff().fillna(0)
     
-    corr_matrix = num_df.corr().abs()
+    corr_matrix = diff_df.corr().abs()
     
     # Isolar a matriz triangular superior para não deletar a própria feature espelhada
     upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
@@ -98,6 +111,20 @@ def main():
     
     print(f"📉 Sobraram estritamente as {num_df_reduced.shape[1]} MÉTRICAS DE OURO após as fogueiras de dimensionalidade!")
     
+    # ── Ponto D: Tabela de Descobertas / Diagnóstico de Anomalias ──
+    # Descobrir quais métricas que sobraram (ou mesmo as que foram dropadas mas protegidas)
+    # têm picos perfeitamente alinhados na taxa de variação (Correlação forte entre anomalias).
+    print("\n🕵️  Gerando Diagnóstico de Anomalias (Taxa de Variação Sincronizada > 0.90)...")
+    diagnostic_pairs = []
+    for col in upper.columns:
+        high_corr = upper[col][upper[col] > 0.90]
+        for idx, val in high_corr.items():
+            # Filtro básico para ignorar correlações lógicas óbvias (ex: _count vs _sum da mesma métrica)
+            if idx.split('_')[0] != col.split('_')[0]:
+                diagnostic_pairs.append((idx, col, val))
+
+    diagnostic_pairs.sort(key=lambda x: x[2], reverse=True)
+
     # GERADOR DA TRILHA DE AUDITORIA (APPEND)
     audit_file = os.path.join(dataset_dir, "..", "relatorios", f"AUDIT_TRAIL_{file_suffix}.md")
     if os.path.exists(audit_file):
@@ -110,6 +137,17 @@ def main():
             for m in list(num_df_reduced.columns)[:5]:
                 f.write(f"- `{m}`\n")
             f.write("\n")
+
+            # Escreve os diagnósticos (Ponto D) no log de auditoria
+            if diagnostic_pairs:
+                f.write("### 🚨 Descobertas e Diagnósticos (Anomalias Sincronizadas na Taxa de Variação > 0.90)\n")
+                f.write("Abaixo estão anomalias em serviços distintos que atingiram pico no mesmo segundo (ex: Gargalos encadeados).\n\n")
+                f.write("| Componente Afetado | Componente Correlacionado | Taxa de Pearson (Primeira Derivada) |\n")
+                f.write("|--------------------|---------------------------|-----------------|\n")
+                # Limite de 15 top diagnosticos para nao poluir o markdown final
+                for p1, p2, val in diagnostic_pairs[:15]:
+                    f.write(f"| `{p1}` | `{p2}` | **{val:.4f}** |\n")
+                f.write("\n")
 
     # Soldar de volta a Alma Categórica no array reduzido na variável mestre
     final_df = pd.concat([df[meta_cols], num_df_reduced], axis=1)

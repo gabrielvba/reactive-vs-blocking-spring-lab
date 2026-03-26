@@ -85,6 +85,15 @@ KPI_CONFIG = [
         "multiplier": 1.0,
     },
     {
+        "col_prefix": "k6_http_req_failed",
+        "col_prefix_fallback": "http_server_errors",
+        "label": "Taxa de Erros",
+        "unit": "req/s falhas",
+        "better": "low",
+        "is_counter": True,
+        "multiplier": 1.0,
+    },
+    {
         "col_prefix": "image_processed_bytes_total",
         "label": "Taxa de Transferência",
         "unit": "MB/s",
@@ -305,6 +314,13 @@ def compute_kpis(df: pd.DataFrame) -> list[dict]:
                     sub = sub_arch[sub_arch['meta_endpoint'] == endpoint][['timestamp', col]].dropna().sort_values('timestamp')
                     if sub.empty:
                         continue
+
+                    # Ponto B (Warmup): Ignorar os primeiros 15% dos dados também para counters para não poluir o steady state rate
+                    cutoff = int(len(sub) * 0.15)
+                    sub = sub.iloc[cutoff:]
+                    if sub.empty:
+                        continue
+
                     rate = compute_rate_series(sub['timestamp'], sub[col])
                     if not rate.dropna().empty:
                         per_endpoint_vals.append(float(rate.dropna().mean()))
@@ -314,14 +330,19 @@ def compute_kpis(df: pd.DataFrame) -> list[dict]:
                 if sub.empty:
                     arch_values[arch] = None
                     continue
+
+                # Ponto B (Warmup): Ignorar os primeiros 15% dos dados
+                cutoff = int(len(sub) * 0.15)
+                steady = sub.iloc[cutoff:]
+                if steady.empty:
+                    arch_values[arch] = None
+                    continue
+
                 if kpi['is_counter']:
-                    rate = compute_rate_series(sub['timestamp'], sub[col])
+                    rate = compute_rate_series(steady['timestamp'], steady[col])
                     val = float(rate.dropna().mean()) if not rate.dropna().empty else None
                 else:
-                    # Skip the first 15% of the test to exclude warmup effect
-                    cutoff = int(len(sub) * 0.15)
-                    steady = sub.iloc[cutoff:][col]
-                    val = float(steady.mean()) if not steady.empty else None
+                    val = float(steady[col].mean()) if not steady.empty else None
 
             if val is not None:
                 val *= kpi['multiplier']
