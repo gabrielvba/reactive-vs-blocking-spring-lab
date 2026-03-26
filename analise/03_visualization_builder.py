@@ -159,6 +159,51 @@ PRIMARY_CHART_SLOTS: list[dict] = [
         "title": "Saturação — períodos de CPU throttled (cAdvisor)",
         "hint": "Limite de CPU do Docker; valores altos explicam filas e latência mesmo com métricas JVM estáveis.",
     },
+    {
+        "prefixes": ["tomcat_connections_current_connections"],
+        "title": "Conexões Tomcat (Blocking)",
+        "hint": "Conexões TCP ativas no servidor Tomcat. Mostra o pool de conexões na arquitetura bloqueante.",
+    },
+    {
+        "prefixes": ["reactor_netty_connection_provider_active_connections"],
+        "title": "Conexões Netty (Reactive)",
+        "hint": "Conexões TCP ativas no servidor Netty. Mostra o uso do pool na arquitetura reativa.",
+    },
+    {
+        "prefixes": ["jvm_gc_pause_seconds_max"],
+        "title": "Pausas do Garbage Collector",
+        "hint": "Tempo máximo de pausa do GC. Pausas longas congelam a aplicação e aumentam a latência (Stop-The-World).",
+    },
+]
+
+# Lista rígida para limitar quais métricas vão aparecer na seção de "Análise detalhada"
+# Para focar apenas nas que trazem grande representatividade, se o prefixo não estiver aqui, ele é ocultado.
+ALLOWED_DETAIL_PREFIXES = [
+    # HTTP e Negócio
+    "http_server_requests",
+    "http_server_errors",
+    "image_processed_bytes",
+    "image_cache_hits",
+    # K6
+    "k6_http_reqs",
+    "k6_http_req_duration",
+    "k6_http_req_waiting",
+    "k6_http_req_failed",
+    "k6_vus",
+    # JVM e Processo
+    "jvm_memory_used",
+    "jvm_threads_live",
+    "jvm_gc_pause",
+    "process_cpu_usage",
+    "process_resident_memory",
+    # Container
+    "container_memory_working_set",
+    "container_cpu_cfs_throttled",
+    # Servidores
+    "tomcat_threads_current",
+    "tomcat_connections_current",
+    "reactor_netty_http_server_connections_active",
+    "reactor_netty_connection_provider_active",
 ]
 
 
@@ -774,8 +819,14 @@ def main():
     print(f"📐 {len(architectures)} arquiteturas × {len(endpoints)} endpoints × {len(test_types)} tipos")
 
     # ── Group metrics ──────────────────────────────────────────────────────────
-    grouped: dict[str, list[str]] = {}
+    # Filtrar usando a ALLOWED_DETAIL_PREFIXES para não incluir centenas de métricas poluindo o relatório final
+    filtered_metric_cols = []
     for col in metric_cols:
+        if any(col.startswith(prefix) for prefix in ALLOWED_DETAIL_PREFIXES):
+            filtered_metric_cols.append(col)
+
+    grouped: dict[str, list[str]] = {}
+    for col in filtered_metric_cols:
         g = assign_group(col)
         grouped.setdefault(g, []).append(col)
 

@@ -62,6 +62,7 @@ def main():
         "image_processed_bytes_total",          # taxa de transferência (MB/s)
         "k6_http_reqs_total",                   # total de requisições k6
         "k6_http_req_duration_p99",             # latência p99 vista pelo cliente
+        "k6_http_req_waiting_p99",              # TTFB (tempo na fila / latencia inicial)
         # ── Tomcat Threads — revelam saturação do thread pool ──
         "tomcat_threads_busy_threads",
         "tomcat_threads_current_threads",

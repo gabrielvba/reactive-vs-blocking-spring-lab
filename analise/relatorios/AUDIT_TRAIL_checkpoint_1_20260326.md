@@ -10,8 +10,8 @@
 
 ## 🧠 Etapa 2: Dimensionality Reduction (`02_correlation_engine.py`)
 - **Volume Recebido:** 140 colunas repassadas pela Fase 1.
-- **Expurgo 3 (Multicolinearidade >95%):** `80` colunas redundantes aniquiladas pela correlação Pearson ou Lasso.
-- **Saldo Final Absoluto (Ouro):** Apenas `54` Métricas de Ouro restaram intactas para decifrar o código.
+- **Expurgo 3 (Multicolinearidade >95%):** `79` colunas redundantes aniquiladas pela correlação Pearson ou Lasso.
+- **Saldo Final Absoluto (Ouro):** Apenas `55` Métricas de Ouro restaram intactas para decifrar o código.
 
 ### Top 5 Métricas Definitivas do Relatório:
 - `container_blkio_device_usage_total`
