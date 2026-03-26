@@ -223,11 +223,24 @@ def compute_kpis(df: pd.DataFrame) -> list[dict]:
         prefix = kpi['col_prefix']
         col = next((c for c in df.columns if c.startswith(prefix)), None)
         label = kpi['label']
-        if col is None and kpi.get('col_prefix_fallback'):
+
+        # Determine if we should fallback (e.g., metric missing or is essentially a flatline)
+        use_fallback = False
+        if col is None:
+            use_fallback = True
+        else:
+            # Check if the primary column is effectively dead (very low variance across the dataset)
+            # This happens when http_server_requests_seconds_count exists but is essentially flat (e.g. var < 1.0)
+            if df[col].astype(float).var() < 1.0:
+                use_fallback = True
+
+        if use_fallback and kpi.get('col_prefix_fallback'):
             fb = kpi['col_prefix_fallback']
-            col = next((c for c in df.columns if c.startswith(fb)), None)
-            if col is not None:
+            fallback_col = next((c for c in df.columns if c.startswith(fb)), None)
+            if fallback_col is not None:
+                col = fallback_col
                 label = kpi.get('label_fallback', label)
+
         if col is None:
             continue
 
@@ -302,6 +315,11 @@ def plot_metric(
     plotted = 0
 
     for (arch, endpoint), style in CASE_STYLES.items():
+        if metric_name.startswith('tomcat_') and arch == 'reactive':
+            continue
+        if metric_name.startswith('reactor_netty_') and arch == 'blocking':
+            continue
+
         mask = (df['meta_architecture'] == arch) & (df['meta_endpoint'] == endpoint)
         sub = df[mask][['timestamp', metric_name]].dropna().sort_values('timestamp')
         if sub.empty:
