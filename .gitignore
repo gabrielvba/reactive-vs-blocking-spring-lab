@@ -51,6 +51,10 @@ out/
 # Python virtual environment
 .venv/
 
+# Python bytecode (analise/*.py)
+__pycache__/
+*.py[cod]
+
 # Local Claude/Cursor artifacts
 .claude/
 
