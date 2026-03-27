@@ -88,11 +88,54 @@ def k6_series_score(labels: dict) -> tuple:
     label_text = "|".join(f"{k}={labels[k]}" for k in sorted(labels.keys()))
     return (penalties, label_count, label_text)
 
+
+def http_server_series_score(labels: dict) -> tuple:
+    """
+    Rank http_server_requests_* series for business throughput extraction.
+    Lower tuple is better.
+    """
+    uri = str(labels.get("uri", ""))
+    status = str(labels.get("status", ""))
+    method = str(labels.get("method", ""))
+
+    penalties = 0
+
+    # Strongly penalize actuator/internal endpoints.
+    if "/actuator" in uri:
+        penalties += 1000
+
+    # Prefer business routes over generic/unknown URIs.
+    if "/file/raw" in uri or "/file/base64" in uri:
+        penalties -= 400
+    elif uri in ("UNKNOWN", "unknown", ""):
+        penalties += 200
+
+    # Prefer GET for this workload.
+    if method and method != "GET":
+        penalties += 30
+
+    # Penalize per-status sliced series; keep totals when available.
+    if status:
+        penalties += 80
+
+    # Stable tie-breakers.
+    label_count = len(labels)
+    label_text = "|".join(f"{k}={labels[k]}" for k in sorted(labels.keys()))
+    return (penalties, label_count, label_text)
+
 # Query the exact time-slice
 for metric in targets:
     url = f"{PROM_URL}/api/v1/query_range"
+    query_expr = metric
+    # For throughput, aggregate status-sliced series into one business counter.
+    if metric == "http_server_requests_seconds_count":
+        endpoint_re = ENDPOINT_HINT if ENDPOINT_HINT else "(raw|base64)"
+        query_expr = (
+            "sum without (status, outcome, error, exception, instance, job, exported_application) "
+            f"(http_server_requests_seconds_count{{application=\"{APP_HINT}\",uri=~\"/file/{endpoint_re}.*\"}})"
+        )
     params = {
-        "query": metric,
+        "query": query_expr,
         "start": start_epoch,
         "end": end_epoch,
         "step": f"{STEP}s"
@@ -109,6 +152,7 @@ for metric in targets:
                     chosen = None
                     # Prefer series that match the expected source for this run.
                     k6_candidates = []
+                    app_candidates = []
                     for series in res_data:
                         labels = series.get("metric", {})
 
@@ -140,10 +184,15 @@ for metric in targets:
                         # App-level metrics (micrometer) use application tag.
                         app = str(labels.get("application", ""))
                         if app == APP_HINT:
-                            chosen = series
-                            break
+                            app_candidates.append(series)
+                            continue
                     if metric.startswith("k6_") and k6_candidates:
                         chosen = min(k6_candidates, key=lambda s: k6_series_score(s.get("metric", {})))
+                    elif app_candidates:
+                        if metric.startswith("http_server_requests_"):
+                            chosen = min(app_candidates, key=lambda s: http_server_series_score(s.get("metric", {})))
+                        else:
+                            chosen = app_candidates[0]
                     # Fallback to first series if no application label matched.
                     if chosen is None:
                         chosen = res_data[0]

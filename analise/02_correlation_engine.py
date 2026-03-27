@@ -13,17 +13,26 @@ def main():
     
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     dataset_dir = os.path.join(base_dir, "analise", "datasets")
-    
-    # Busca o csv mais recente gerado pelo script 01
-    search_pattern = os.path.join(dataset_dir, "01_merged_*.csv")
-    files = glob.glob(search_pattern)
-    if not files:
-        # fallback para o padrão antigo
-        files = glob.glob(os.path.join(dataset_dir, "dataset_consolidado*.csv"))
-    if not files:
-        print(f"❌ Nenhum CSV do Módulo 01 encontrado em: {dataset_dir}")
-        return
-    
+    label_filter = os.environ.get("RUN_LABEL_FILTER", "").strip()
+
+    # Busca o csv mais recente gerado pelo script 01 (alinhado a RUN_LABEL_FILTER se definido)
+    if label_filter:
+        search_pattern = os.path.join(dataset_dir, f"01_merged_{label_filter}_*.csv")
+        files = glob.glob(search_pattern)
+        if not files:
+            print(f"❌ Nenhum CSV 01_merged_{label_filter}_*.csv em: {dataset_dir}")
+            print(f"   Gere com RUN_LABEL_FILTER={label_filter} python analise/01_clean_and_merge.py")
+            return
+        print(f"🔖 RUN_LABEL_FILTER='{label_filter}' — apenas ficheiros 01_merged_{label_filter}_*.csv")
+    else:
+        search_pattern = os.path.join(dataset_dir, "01_merged_*.csv")
+        files = glob.glob(search_pattern)
+        if not files:
+            files = glob.glob(os.path.join(dataset_dir, "dataset_consolidado*.csv"))
+        if not files:
+            print(f"❌ Nenhum CSV do Módulo 01 encontrado em: {dataset_dir}")
+            return
+
     infile = max(files, key=os.path.getctime)
     base_name = os.path.basename(infile)
     
@@ -98,6 +107,13 @@ def main():
         # ── Container (cAdvisor) — memória de trabalho do container ──
         "container_memory_working_set_bytes",
         "container_cpu_cfs_throttled_periods_total",  # saturação CPU (relatório “Visão principal”)
+        "container_network_receive_bytes_total",
+        "process_open_fds",
+        "tomcat_global_request_max_seconds",
+        "tomcat_global_request_seconds_sum",
+        "producer_fetch_duration_seconds_sum",
+        "producer_fetch_duration_seconds_bucket",
+        "producer_fetch_duration_seconds_max",
     ]
 
     # Remover da lista de expurgo qualquer métrica protegida

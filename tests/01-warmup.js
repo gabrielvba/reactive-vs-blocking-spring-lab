@@ -2,7 +2,21 @@ import http from 'k6/http';
 import { check, sleep } from 'k6';
 import { Rate } from 'k6/metrics';
 
+const ENDPOINT_TYPE = __ENV.ENDPOINT_TYPE || 'mixed';
+
 const errorRate = new Rate('errors');
+
+const thresholds = {
+  'errors': ['rate<0.01'],
+};
+if (ENDPOINT_TYPE === 'base64') {
+  thresholds['http_req_duration{endpoint:base64}'] = ['p(95)<25000'];
+} else if (ENDPOINT_TYPE === 'raw') {
+  thresholds['http_req_duration{endpoint:raw}'] = ['p(95)<25000'];
+} else {
+  thresholds['http_req_duration{endpoint:base64}'] = ['p(95)<25000'];
+  thresholds['http_req_duration{endpoint:raw}'] = ['p(95)<25000'];
+}
 
 export const options = {
   stages: [
@@ -10,17 +24,10 @@ export const options = {
     { duration: '30s', target: 25 },  // 20 VUs é suficiente para popular o cache em 1 minuto
     { duration: '30s', target: 0 },  // Desliga suavemente
   ],
-  thresholds: {
-    // Mix inclui imagens até ~2.4MB; após redeploy a JVM está fria — p95 agressivo (sub-1s) falha sem indicar bug.
-    // Objetivo: quase zero erros HTTP; latência só como rede de segurança larga para warmup.
-    'http_req_duration{endpoint:base64}': ['p(95)<25000'],
-    'http_req_duration{endpoint:raw}': ['p(95)<25000'],
-    'errors': ['rate<0.01'],
-  },
+  thresholds,
 };
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
-const ENDPOINT_TYPE = __ENV.ENDPOINT_TYPE || 'mixed';
 
 // Distribuição de peso da vida real (80% das requisições são imagens pequenas, 20% imagens pesadas)
 // Os arquivos originais do provider: '100kb', '395kb', '542kb', '1018kb', '2446kb', '6145kb', etc.

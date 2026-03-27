@@ -94,27 +94,34 @@ def main():
     dataset_dir = os.path.join(base_dir, "analise", "datasets")
     os.makedirs(dataset_dir, exist_ok=True)
     
-    # Engolir TODOS os arquivos salvos pelo orquestrador Python de rede
+    # Opcional: RUN_LABEL_FILTER=checkpoint_2 → só exports desse label (não mistura checkpoint_1).
+    label_filter = os.environ.get("RUN_LABEL_FILTER", "").strip()
     json_files = glob.glob(os.path.join(prom_exports_dir, "timeseries-*.json"))
-    
+
     if not json_files:
         print("❌ Nenhum arquivo JSON de timeseries encontrado em results/prometheus-exports/")
         return
-        
-    print(f"✅ Scanner detectou {len(json_files)} baterias de testes prontas para achatamento (Flattening).")
-    
+
+    if label_filter:
+        print(f"🔖 RUN_LABEL_FILTER='{label_filter}' — apenas arquivos com esse meta_label.")
+
+    print(f"✅ Scanner detectou {len(json_files)} arquivo(s) em results/prometheus-exports/.")
+
     all_dfs = []
-    
+
     for f in json_files:
         filename_only = os.path.basename(f)
+        test_type, endpoint, arch, label, full_name = parse_filename(f)
+        if label_filter and label != label_filter:
+            print(f"  (ignorado) {filename_only}  [label={label}]")
+            continue
+
         print(f"Processando matriz complexa de: {filename_only}...")
         df_test = load_prometheus_json(f)
-        
+
         if df_test.empty:
             print("  -> Vazio ou corrompido, sendo estritamente ignorado.")
             continue
-            
-        test_type, endpoint, arch, label, full_name = parse_filename(f)
         
         # O Pulo do Gato: Injetar Metadata (Tagging Universal de Identificação)
         df_test['meta_test_type'] = test_type
@@ -130,7 +137,10 @@ def main():
         all_dfs.append(df_test)
         
     if not all_dfs:
-        print("❌ Nenhum dado válido resultou da Deserialização.")
+        msg = "❌ Nenhum dado válido resultou da Deserialização."
+        if label_filter:
+            msg += f" Verifique RUN_LABEL_FILTER='{label_filter}' (nenhum ficheiro com esse meta_label)."
+        print(msg)
         return
         
     print("\n🔄 Mesclando estaticamente todos os testes em um único DataFrame Master (Merge)...")
@@ -146,6 +156,38 @@ def main():
         
     var = final_df[numeric_cols].var()
     dead_cols = var[var == 0].index
+    # Métricas de observabilidade críticas: manter mesmo com variância zero no merge global
+    # (ex.: tomcat_threads constante entre cenários, mas ainda úteis por cenário nos gráficos).
+    PROTECTED_FROM_ZERO_VARIANCE = (
+        "http_server_requests_seconds_count",
+        "http_server_requests_seconds_sum",
+        "image_processed_bytes_total",
+        "k6_http_reqs_total",
+        "k6_http_req_duration_p99",
+        "k6_http_req_waiting_p99",
+        "tomcat_threads_busy_threads",
+        "tomcat_threads_current_threads",
+        "tomcat_threads_config_max_threads",
+        "tomcat_connections_current_connections",
+        "tomcat_connections_config_max_connections",
+        "tomcat_global_error_total",
+        "tomcat_global_request_max_seconds",
+        "jvm_threads_live_threads",
+        "jvm_memory_used_bytes",
+        "jvm_gc_pause_seconds_max",
+        "reactor_netty_http_server_connections_active",
+        "reactor_netty_connection_provider_active_connections",
+        "reactor_netty_eventloop_pending_tasks",
+        "container_memory_working_set_bytes",
+        "container_cpu_cfs_throttled_periods_total",
+        "producer_fetch_duration_seconds_sum",
+        "producer_fetch_duration_seconds_bucket",
+        "producer_fetch_duration_seconds_max",
+    )
+    rescued = [c for c in dead_cols if c in PROTECTED_FROM_ZERO_VARIANCE]
+    dead_cols = dead_cols.drop(rescued) if len(rescued) else dead_cols
+    if rescued:
+        print(f"   -> Resgatadas da variância zero (whitelist): {rescued}")
     print(f"   -> Encontradas e aniquiladas {len(dead_cols)} métricas 'mortas' que não sofreram alterações de estado ao longo de 100% dos testes.")
     final_df.drop(columns=dead_cols, inplace=True)
     

@@ -1,6 +1,8 @@
 import os
 import glob
 import base64
+import json
+import re
 import pandas as pd
 import matplotlib
 matplotlib.use('Agg')
@@ -154,6 +156,11 @@ PRIMARY_CHART_SLOTS: list[dict] = [
         "hint": "Quanto tempo o pedido esperou antes de começar a receber dados (aceitação + fila).",
     },
     {
+        "prefixes": ["k6_server_errors_total", "tomcat_global_error_total", "k6_errors_rate"],
+        "title": "Erros — HTTP 5xx e falhas durante o teste",
+        "hint": "Taxa de erros no tráfego: picos aqui mostram qual cenário degradou primeiro sob stress.",
+    },
+    {
         "prefixes": ["process_cpu_usage"],
         "title": "CPU — utilização do processo JVM",
         "hint": "Cruz com latência: CPU baixa com latência alta sugere bloqueio ou I/O, não falta de CPU aparente.",
@@ -185,6 +192,342 @@ PRIMARY_CHART_SLOTS: list[dict] = [
     },
 ]
 
+# Visão alternativa no HTML: até 3 gráficos sugeridos por camada (prefixo Prometheus).
+# raw/base64 distinguem-se por labels nas séries; não há categoria base64_ no nome da métrica.
+CATEGORY_LAYER_SLOTS: list[dict] = [
+    {
+        "category_id": "k6",
+        "category_title": "k6 — cliente (gerador de carga)",
+        "category_lede": "Latência, throughput e falhas percebidos pelo k6 (ótica do usuário do teste).",
+        "slots": [
+            {
+                "prefixes": ["k6_http_reqs_total"],
+                "title": "Throughput — requisições completadas (k6)",
+                "hint": "Volume de requisições úteis; compare com o throughput do servidor.",
+            },
+            {
+                "prefixes": ["k6_http_req_duration_p99"],
+                "title": "Latência — duração total p99 (k6)",
+                "hint": "Percentil 99 do tempo até a resposta completa.",
+            },
+            {
+                "prefixes": ["k6_http_req_waiting_p99"],
+                "title": "Fila / TTFB — espera p99 (k6)",
+                "hint": "Tempo até o primeiro byte; fila + aceitação no servidor.",
+            },
+        ],
+    },
+    {
+        "category_id": "http",
+        "category_title": "http_ — servidor HTTP (Micrometer)",
+        "category_lede": "Contadores e histogramas HTTP expostos pelo Spring Boot no backend.",
+        "slots": [
+            {
+                "prefixes": ["http_server_requests_seconds_count"],
+                "title": "Requisições recebidas (contador)",
+                "hint": "Volume no servidor; agregue com taxa para req/s.",
+            },
+            {
+                "prefixes": ["http_server_requests_seconds_sum"],
+                "title": "Tempo total de processamento",
+                "hint": "Soma de durações; cruze com count para latência média.",
+            },
+            {
+                "prefixes": ["http_server_requests_active_seconds_max"],
+                "title": "Requisições ativas — máximo",
+                "hint": "Pico de requisições simultâneas em andamento.",
+            },
+        ],
+    },
+    {
+        "category_id": "jvm",
+        "category_title": "jvm_ — máquina virtual Java",
+        "category_lede": "Heap, GC e threads da JVM.",
+        "slots": [
+            {
+                "prefixes": ["jvm_memory_used_bytes"],
+                "title": "Heap usada",
+                "hint": "Pressão de memória no heap; subida contínua pode preceder OOM.",
+            },
+            {
+                "prefixes": ["jvm_gc_pause_seconds_max"],
+                "title": "Pausas máximas do GC",
+                "hint": "Stop-the-world; correlacione com picos de latência p99.",
+            },
+            {
+                "prefixes": ["jvm_threads_live_threads"],
+                "title": "Threads vivas",
+                "hint": "No blocking tende a subir com carga; no reactive costuma ser mais estável.",
+            },
+        ],
+    },
+    {
+        "category_id": "tomcat",
+        "category_title": "tomcat_ — servlet / blocking",
+        "category_lede": "Conexões e pool do Tomcat (arquitetura bloqueante).",
+        "slots": [
+            {
+                "prefixes": ["tomcat_connections_current_connections"],
+                "title": "Conexões atuais",
+                "hint": "Sockets atendendo requisições; perto do limite implica fila.",
+            },
+            {
+                "prefixes": [
+                    "tomcat_threads_current_threads",
+                    "tomcat_threads_busy_threads",
+                    "tomcat_global_request_max_seconds",
+                ],
+                "title": "Threads do worker Tomcat",
+                "titles_by_prefix": {
+                    "tomcat_global_request_max_seconds": "Tempo máx. de request (Tomcat) — proxy se threads não exportadas",
+                },
+                "hint": "Pool de threads; se a métrica não existir no CSV, o merge pode tê-la filtrado antes (reexecute 01) ou use o máximo de request como indicador de saturação.",
+            },
+            {
+                "prefixes": ["tomcat_global_error_total"],
+                "title": "Erros globais Tomcat",
+                "hint": "Falhas agregadas no conector/servlet.",
+            },
+        ],
+    },
+    {
+        "category_id": "reactor",
+        "category_title": "reactor_ — Netty / WebFlux",
+        "category_lede": "Conexões e pools reativos (arquitetura não-bloqueante).",
+        "slots": [
+            {
+                "prefixes": ["reactor_netty_http_server_connections_active"],
+                "title": "Conexões HTTP ativas (servidor)",
+                "hint": "Concorrência na pilha Netty do servidor.",
+            },
+            {
+                "prefixes": ["reactor_netty_connection_provider_active_connections"],
+                "title": "Pool de conexões (provider)",
+                "hint": "Conexões outbound/cliente reativo em uso.",
+            },
+            {
+                "prefixes": ["reactor_netty_eventloop_pending_tasks"],
+                "title": "Tarefas pendentes no event loop",
+                "hint": "Fila no loop; valores altos com latência alta indicam pressão no reactor.",
+            },
+        ],
+    },
+    {
+        "category_id": "image",
+        "category_title": "image_ — negócio (imagens)",
+        "category_lede": "Bytes processados e cache de imagens no consumidor.",
+        "slots": [
+            {
+                "prefixes": ["image_processed_bytes_total"],
+                "title": "Bytes processados (total)",
+                "hint": "Throughput de negócio em dados; exiba como taxa (MB/s).",
+            },
+            {
+                "prefixes": ["image_cache_hits_total"],
+                "title": "Acertos de cache",
+                "hint": "Quanto foi servido sem ir ao provider.",
+            },
+            {
+                "prefixes": ["image_cache_load_duration_seconds_max"],
+                "title": "Tempo máx. de carga no cache",
+                "hint": "Picos ao popular ou recuperar entradas do cache.",
+            },
+        ],
+    },
+    {
+        "category_id": "container",
+        "category_title": "container_ — cAdvisor / cgroups",
+        "category_lede": "Limites reais de CPU e memória do container.",
+        "slots": [
+            {
+                "prefixes": ["container_memory_working_set_bytes"],
+                "title": "Working set (memória)",
+                "hint": "Memória visível ao OOM killer do cgroup.",
+            },
+            {
+                "prefixes": ["container_cpu_cfs_throttled_periods_total"],
+                "title": "Períodos de CPU throttled",
+                "hint": "CPU limitada pelo Docker; explica filas com JVM ‘calma’.",
+            },
+            {
+                "prefixes": ["container_network_receive_bytes_total"],
+                "title": "Rede — bytes recebidos",
+                "hint": "Tráfego de entrada no container (saturation de rede).",
+            },
+        ],
+    },
+    {
+        "category_id": "process",
+        "category_title": "process_ — processo no SO",
+        "category_lede": "CPU e RSS do processo Java (complementa JVM e container).",
+        "slots": [
+            {
+                "prefixes": ["process_cpu_usage"],
+                "title": "Uso de CPU do processo",
+                "hint": "Percentual de CPU do processo.",
+            },
+            {
+                "prefixes": ["process_resident_memory_bytes"],
+                "title": "Memória residente (RSS)",
+                "hint": "RAM física do processo (heap + off-heap).",
+            },
+            {
+                "prefixes": ["process_open_fds"],
+                "title": "File descriptors abertos",
+                "hint": "Vazamento ou pressão de sockets/arquivos sob carga.",
+            },
+        ],
+    },
+    {
+        "category_id": "producer",
+        "category_title": "producer_ — upstream (provider)",
+        "category_lede": "Latência de fetch ao microserviço de imagens (gargalo fora do consumidor).",
+        "slots": [
+            {
+                "prefixes": ["producer_fetch_duration_seconds_sum"],
+                "title": "Tempo acumulado de fetch",
+                "hint": "Soma das durações; cruze com count para média.",
+            },
+            {
+                "prefixes": ["producer_fetch_duration_seconds_bucket"],
+                "title": "Histograma de duração de fetch (bucket)",
+                "hint": "Distribuição de latências ao provider (contadores por le).",
+            },
+            {
+                "prefixes": ["producer_fetch_duration_seconds_max", "producer_fetch_duration_seconds_count"],
+                "title": "Fetch — máximo ou contagem",
+                "hint": "Pior caso ou volume de observações, se existirem no dataset reduzido.",
+            },
+        ],
+    },
+]
+
+# Textos explicativos para a visão por camada (pré-análise / o que observar).
+CATEGORY_LAYER_DEEP_GUIDE: dict[str, dict] = {
+    "k6": {
+        "role": "Experiência do cliente (primeiro lugar a olhar).",
+        "watch": ["p99 sobe com a rampa?", "Aparecem erros (timeout/5xx)?", "req/s estabiliza ou colapsa com mais VUs?"],
+        "red_flags": [
+            "Latência sobe com carga → saturação progressiva.",
+            "Throughput trava mesmo com mais VUs → gargalo interno (CPU, fila, I/O).",
+            "Erros ou timeouts → colapso ou limite de recursos.",
+        ],
+    },
+    "http": {
+        "role": "Boundary HTTP do serviço (Micrometer): o problema já entrou no backend?",
+        "watch": ["Taxa de requests no servidor", "sum/count → latência média implícita", "requisições ativas (fila)"],
+        "red_flags": [
+            "k6 lento mas métricas http_server ‘boas’ → rede/cliente/teste.",
+            "k6 e http_server latência sobem juntas → gargalo dentro do serviço.",
+            "active_seconds_max sem cair → fila interna.",
+        ],
+    },
+    "jvm": {
+        "role": "Estrutura da JVM: heap, GC, threads.",
+        "watch": ["Heap crescendo sem voltar?", "Pausas GC", "Threads vivas"],
+        "red_flags": [
+            "Heap só sobe → possível leak ou pressão de alocação.",
+            "GC pause sobe junto com p99 → STW impactando latência.",
+            "Threads vivas disparam (blocking) → pool sob pressão.",
+        ],
+    },
+    "tomcat": {
+        "role": "Tomcat / servlet (blocking): gargalo clássico de pool e conexões.",
+        "watch": ["Conexões vs limite", "Threads vs limite", "Erros globais"],
+        "red_flags": [
+            "Threads no máximo → fila explode e latência dispara.",
+            "Conexões no teto → backlog de aceitação.",
+            "MVC costuma ‘funcionar até um ponto’ e degradar rápido depois.",
+        ],
+    },
+    "reactor": {
+        "role": "Netty / WebFlux: concorrência por I/O e pools, não por thread count.",
+        "watch": ["Conexões ativas no servidor", "Pool outbound (provider)", "Pending no event loop"],
+        "red_flags": [
+            "Muitas conexões ativas até certo ponto é normal; com p99 alto → pressão.",
+            "Pool do connection_provider saturado → gargalo em chamadas externas.",
+            "p99 sobe sem CPU alta → frequentemente I/O-bound (ex.: provider).",
+        ],
+    },
+    "image": {
+        "role": "Negócio: bytes reais e cache.",
+        "watch": ["Taxa de bytes processados", "cache hits", "tempo de carga no cache"],
+        "red_flags": [
+            "req/s sobe mas MB/s cai → payload ou processamento mais pesado por request.",
+            "Cache hit cai → mais idas ao provider → latência.",
+        ],
+    },
+    "container": {
+        "role": "cgroups: limites reais do Docker (não é ‘só JVM’).",
+        "watch": ["Working set vs limite", "CPU throttling", "Rede (opcional)"],
+        "red_flags": [
+            "Memória encostando no limite → risco de OOMKill.",
+            "Throttling alto → CPU capada pelo compose/K8s → latência ‘artificial’.",
+        ],
+    },
+    "process": {
+        "role": "Processo no SO: complementa JVM (CPU, RSS, FDs).",
+        "watch": ["CPU do processo", "RSS", "open files / sockets"],
+        "red_flags": [
+            "CPU ~100% → CPU-bound (serialização, compressão, etc.).",
+            "RSS alto com heap ‘normal’ → off-heap/Netty/buffers.",
+        ],
+    },
+    "producer": {
+        "role": "Upstream: separar ‘meu MS’ do provider de imagens.",
+        "watch": ["Soma/count do timer de fetch", "Histograma (buckets)", "Máximo"],
+        "red_flags": [
+            "Fetch lento e k6 lento → dependência externa no caminho crítico.",
+            "Fetch ok e k6 lento → investigar consumidor, fila, ou rede.",
+        ],
+    },
+}
+
+
+def render_category_guide_block(category_id: str) -> str:
+    g = CATEGORY_LAYER_DEEP_GUIDE.get(category_id)
+    if not g:
+        return ""
+    li_watch = "".join(f"<li>{w}</li>" for w in g["watch"])
+    li_red = "".join(f"<li>{r}</li>" for r in g["red_flags"])
+    return f'''
+<div class="layer-guide">
+  <p class="layer-guide-role"><strong>O que é esta camada:</strong> {g["role"]}</p>
+  <div class="layer-guide-cols">
+    <div><strong>O que observar</strong><ul class="layer-guide-ul">{li_watch}</ul></div>
+    <div><strong>Sinais de alerta (exemplos)</strong><ul class="layer-guide-ul">{li_red}</ul></div>
+  </div>
+</div>'''
+
+
+def layer_diagnostic_patterns_html() -> str:
+    patterns = [
+        ("Saturação de thread (MVC)", "k6 p99 ↑ / http latência ↑ / threads Tomcat no máximo (ou conexões).", "Pool de threads esgotado → fila → latência."),
+        ("I/O-bound (WebFlux)", "k6 p99 ↑ / CPU ‘normal’ / conexões reactor ↑ / fetch ao provider lento.", "Esperando I/O (ex.: provider externo)."),
+        ("GC impactando latência", "k6 p99 ↑ / jvm_gc_pause max ↑ / heap oscilando.", "Stop-the-world ou pressão de memória."),
+        ("CPU-bound", "k6 p99 ↑ / process_cpu_usage alto / sem saturar threads como explicação única.", "Processamento pesado na CPU."),
+        ("Cache ajudando", "cache hits ↑ / menos pressão no producer / latência mais estável.", "Cache amortecendo idas ao provider."),
+        ("Infra limitando", "container throttling ↑ ou memória no limite, com latência alta sem ‘culpado’ óbvio em código.", "Limite de cgroup, não só lógica da app."),
+    ]
+    cards = ""
+    for title, signals, dx in patterns:
+        cards += f'''<div class="pattern-card">
+  <div class="pattern-title">{title}</div>
+  <div class="pattern-signals"><strong>Sinais:</strong> {signals}</div>
+  <div class="pattern-dx"><strong>Leitura:</strong> {dx}</div>
+</div>
+'''
+    return f'''
+<section class="layer-patterns" id="padroes-diagnostico">
+  <h3 class="layer-patterns-title">Padrões de diagnóstico (cruzando camadas)</h3>
+  <p class="layer-patterns-lede">Combine k6 + http + JVM/Tomcat ou Netty + container + producer. Um gráfico isolado raramente prova causa raiz.</p>
+  <div class="pattern-grid">
+{cards}
+  </div>
+</section>
+'''
+
+
 # Lista rígida para limitar quais métricas vão aparecer na seção de "Análise detalhada"
 # Para focar apenas nas que trazem grande representatividade, se o prefixo não estiver aqui, ele é ocultado.
 
@@ -201,6 +544,8 @@ DETAIL_HINTS = {
     "k6_http_req_duration_p99": {"title": "Latência P99", "hint": "Tempo total p99 percebido pelo cliente. 99% das requisições foram mais rápidas que este valor."},
     "k6_http_req_waiting_p99": {"title": "Tempo de Fila / TTFB (P99)", "hint": "Tempo de Espera (Time To First Byte). Picos indicam que o servidor demorou a aceitar/iniciar o processamento."},
     "k6_http_req_failed": {"title": "Taxa de Falha do Cliente", "hint": "Percentual de requisições que retornaram erro não-200 sob a ótica do k6."},
+    "k6_server_errors_total": {"title": "Erros 5xx (k6)", "hint": "Contador de respostas HTTP 5xx observadas pelo k6. Útil para comparar qual cenário falhou mais sob carga."},
+    "k6_errors_rate": {"title": "Taxa de Erros (k6)", "hint": "Taxa agregada de erros reportados pelo k6. Complementa o contador de 5xx com visão percentual."},
     "k6_vus": {"title": "Usuários Virtuais (VUs)", "hint": "Número de VUs ativos injetando carga no momento."},
     "jvm_memory_used_bytes": {"title": "Uso de Memória Heap", "hint": "Quantidade de RAM ativa usada pelo Java. Subidas em escada indicam alocação constante até a limpeza do GC."},
     "jvm_threads_live_threads": {"title": "Threads Ativas", "hint": "Quantidade de threads vivas na JVM. No WebFlux deve ser baixo (~20); no Tomcat MVC escala com o tráfego."},
@@ -214,6 +559,7 @@ DETAIL_HINTS = {
     "container_cpu_cfs_throttled_seconds_total": {"title": "Tempo de Throttling", "hint": "Soma de segundos perdidos com o container 'congelado' pelo Docker/Kubernetes por excesso de uso de CPU."},
     "tomcat_threads_current_threads": {"title": "Threads do Tomcat", "hint": "Threads do pool do Tomcat. Se chegar no limite (ex: 200), novas conexões ficam na fila."},
     "tomcat_connections_current_connections": {"title": "Conexões Tomcat", "hint": "Quantidade de sockets abertos atendendo requisições bloqueantes."},
+    "tomcat_global_error_total": {"title": "Erros Globais Tomcat", "hint": "Contador de erros globais no Tomcat. Quando sobe junto com latência, indica saturação ou falhas no backend blocking."},
     "reactor_netty_http_server_connections_active": {"title": "Conexões Netty Ativas", "hint": "Requisições simultâneas em processamento assíncrono."},
     "reactor_netty_connection_provider_active_connections": {"title": "Pool Netty Ativo", "hint": "Conexões reativas utilizadas simultaneamente pelo cliente webflux/banco de dados."},
 }
@@ -224,42 +570,6 @@ def get_detail_info(metric_name):
             return info
     return {"title": metric_name, "hint": "Métrica complementar para análise avançada de infraestrutura e comportamento da JVM."}
 
-
-# ─── Dictionary of detailed hints ──────────────────────────────────────────
-DETAIL_HINTS = {
-    "http_server_requests_seconds_count": {"title": "Requisições HTTP (Servidor)", "hint": "Total de requisições recebidas pelo servidor. Indica o volume de tráfego bruto no backend."},
-    "http_server_requests_seconds_sum": {"title": "Tempo Total de Requisições HTTP", "hint": "Tempo cumulativo gasto processando requisições. Útil para calcular latência média ao cruzar com o total."},
-    "http_server_requests_active_seconds_bucket": {"title": "Histograma de Requisições Ativas", "hint": "Distribuição das requisições simultâneas em andamento."},
-    "http_server_requests_active_seconds_gsum": {"title": "Soma de Requisições Ativas", "hint": "Tempo total gasto por requisições ativas. Picos indicam acúmulo de processamento pendente."},
-    "http_server_errors": {"title": "Erros HTTP", "hint": "Contador de falhas 4xx/5xx devolvidas pelo servidor."},
-    "image_processed_bytes_total": {"title": "Bytes Processados", "hint": "Quantidade total de bytes de imagem trafegados. Define o throughput real de dados do negócio."},
-    "image_cache_hits_total": {"title": "Taxa de Acerto de Cache", "hint": "Quantas imagens foram servidas diretamente da memória sem reprocessamento."},
-    "k6_http_reqs_total": {"title": "Requisições Disparadas (k6)", "hint": "Volume de requisições geradas pelo k6. Se divergir do servidor, indica gargalos de rede ou conexões dropadas."},
-    "k6_http_req_duration_p99": {"title": "Latência P99", "hint": "Tempo total p99 percebido pelo cliente. 99% das requisições foram mais rápidas que este valor."},
-    "k6_http_req_waiting_p99": {"title": "Tempo de Fila / TTFB (P99)", "hint": "Tempo de Espera (Time To First Byte). Picos indicam que o servidor demorou a aceitar/iniciar o processamento."},
-    "k6_http_req_failed": {"title": "Taxa de Falha do Cliente", "hint": "Percentual de requisições que retornaram erro não-200 sob a ótica do k6."},
-    "k6_vus": {"title": "Usuários Virtuais (VUs)", "hint": "Número de VUs ativos injetando carga no momento."},
-    "jvm_memory_used_bytes": {"title": "Uso de Memória Heap", "hint": "Quantidade de RAM ativa usada pelo Java. Subidas em escada indicam alocação constante até a limpeza do GC."},
-    "jvm_threads_live_threads": {"title": "Threads Ativas", "hint": "Quantidade de threads vivas na JVM. No WebFlux deve ser baixo (~20); no Tomcat MVC escala com o tráfego."},
-    "jvm_gc_pause_seconds_max": {"title": "Pausas Máximas do GC", "hint": "Pior cenário de parada da aplicação (Stop-The-World). Afeta diretamente o P99 de latência."},
-    "jvm_gc_pause_seconds_count": {"title": "Frequência do GC", "hint": "Número de coletas de lixo. Se rodar muito frequentemente, o sistema perde CPU processando lixo em vez de requisições."},
-    "jvm_gc_pause_seconds_sum": {"title": "Tempo Total em GC", "hint": "Custo temporal acumulado gasto pelo Garbage Collector."},
-    "process_cpu_usage": {"title": "Uso de CPU", "hint": "Percentual de uso da CPU pelo processo Java. Importante para correlacionar com saturação e throughput."},
-    "process_resident_memory_bytes": {"title": "Memória Residente (RSS)", "hint": "Tamanho real alocado na RAM física para todo o processo, incluindo heap, metaspace e off-heap (Netty)."},
-    "container_memory_working_set_bytes": {"title": "Memória do Container", "hint": "Consumo de RAM visto pelo Docker. É a métrica oficial para disparar OOM Kill (Out Of Memory)."},
-    "container_cpu_cfs_throttled_periods_total": {"title": "Limitação de CPU (Throttling)", "hint": "Períodos em que o container estourou sua cota de CPU do cgroups e foi paralisado forçadamente."},
-    "container_cpu_cfs_throttled_seconds_total": {"title": "Tempo de Throttling", "hint": "Soma de segundos perdidos com o container \"congelado\" pelo Docker/Kubernetes por excesso de uso de CPU."},
-    "tomcat_threads_current_threads": {"title": "Threads do Tomcat", "hint": "Threads do pool do Tomcat. Se chegar no limite (ex: 200), novas conexões ficam na fila."},
-    "tomcat_connections_current_connections": {"title": "Conexões Tomcat", "hint": "Quantidade de sockets abertos atendendo requisições bloqueantes."},
-    "reactor_netty_http_server_connections_active": {"title": "Conexões Netty Ativas", "hint": "Requisições simultâneas em processamento assíncrono."},
-    "reactor_netty_connection_provider_active_connections": {"title": "Pool Netty Ativo", "hint": "Conexões reativas utilizadas simultaneamente pelo cliente webflux/banco de dados."},
-}
-
-def get_detail_info(metric_name):
-    for prefix, info in DETAIL_HINTS.items():
-        if metric_name.startswith(prefix):
-            return info
-    return {"title": metric_name, "hint": "Métrica complementar para análise avançada de infraestrutura e comportamento da JVM."}
 
 ALLOWED_DETAIL_PREFIXES = [
     # HTTP e Negócio
@@ -272,6 +582,8 @@ ALLOWED_DETAIL_PREFIXES = [
     "k6_http_req_duration",
     "k6_http_req_waiting",
     "k6_http_req_failed",
+    "k6_server_errors_total",
+    "k6_errors_rate",
     "k6_vus",
     # JVM e Processo
     "jvm_memory_used",
@@ -283,8 +595,10 @@ ALLOWED_DETAIL_PREFIXES = [
     "container_memory_working_set",
     "container_cpu_cfs_throttled",
     # Servidores
-    "tomcat_threads_current",
+    "tomcat_threads",
     "tomcat_connections_current",
+    "tomcat_global_error_total",
+    "tomcat_global_request_max",
     "reactor_netty_http_server_connections_active",
     "reactor_netty_connection_provider_active",
 ]
@@ -307,6 +621,149 @@ def resolve_primary_chart_metrics(metric_cols: list[str]) -> list[tuple[str, str
         seen.add(col)
         out.append((col, slot["title"], slot.get("hint", "")))
     return out
+
+
+def resolve_one_metric_column(metric_cols: list[str], prefixes: list[str]) -> str | None:
+    """First column in metric_cols that matches any prefix (exact or startswith)."""
+    for p in prefixes:
+        col = next((c for c in metric_cols if c == p or c.startswith(p)), None)
+        if col:
+            return col
+    return None
+
+
+def resolve_category_layer_specs(metric_cols: list[str]) -> list[dict]:
+    """
+    Build resolved category view: each category has up to 3 slots (col or None, title, hint).
+    Dedupe by column within the same category (skip duplicate columns).
+    """
+    out: list[dict] = []
+    for cat in CATEGORY_LAYER_SLOTS:
+        cid = cat["category_id"]
+        seen_cols: set[str] = set()
+        resolved_slots: list[tuple[str | None, str, str]] = []
+        for slot in cat["slots"]:
+            col = resolve_one_metric_column(metric_cols, slot["prefixes"])
+            if col and col in seen_cols:
+                col = None
+            disp_title = slot["title"]
+            if col and slot.get("titles_by_prefix") and col in slot["titles_by_prefix"]:
+                disp_title = slot["titles_by_prefix"][col]
+            if col:
+                seen_cols.add(col)
+            resolved_slots.append((col, disp_title, slot.get("hint", "")))
+        out.append({
+            "category_id": cid,
+            "category_title": cat["category_title"],
+            "category_lede": cat["category_lede"],
+            "resolved": resolved_slots,
+        })
+    return out
+
+
+def category_layer_title_overrides(category_specs: list[dict]) -> dict[str, str]:
+    """Map metric column -> display title from category layer slots (first wins)."""
+    title_by_col: dict[str, str] = {}
+    for cat in category_specs:
+        for col, title, _hint in cat["resolved"]:
+            if col and col not in title_by_col:
+                title_by_col[col] = title
+    return title_by_col
+
+
+def flatten_category_columns(category_specs: list[dict]) -> list[str]:
+    cols: list[str] = []
+    seen: set[str] = set()
+    for cat in category_specs:
+        for col, _t, _h in cat["resolved"]:
+            if col and col not in seen:
+                seen.add(col)
+                cols.append(col)
+    return cols
+
+
+def category_layer_html(category_specs: list[dict], metric_charts: dict[str, str]) -> str:
+    """HTML for 'Visão por camada': sections per category, up to 3 cards each."""
+    blocks = []
+    for cat in category_specs:
+        cid = cat["category_id"]
+        safe_id = re.sub(r'[^a-z0-9_-]', '-', cid.lower())
+        guide = render_category_guide_block(cid)
+        hdr = (
+            f'<div class="group-header layer-cat-header" id="layer-{safe_id}">'
+            f'{cat["category_title"]}</div>'
+            f'<p class="category-lede">{cat["category_lede"]}</p>'
+            f'{guide}'
+        )
+        grid = '<div class="grid grid-primary">\n'
+        for col, title, hint in cat["resolved"]:
+            if col:
+                b64 = metric_charts.get(col)
+                card_id = f'layer-{safe_id}-{re.sub(r"[^a-zA-Z0-9_-]", "_", col)}'
+                if b64:
+                    grid += f'''<div class="card card-vital card-layer" id="{card_id}">
+  <div class="vital-caption">
+    <span class="vital-title">{title}</span>
+    <code class="vital-tech">{col}</code>
+    <p class="vital-hint">{hint}</p>
+  </div>
+  <img src="data:image/png;base64,{b64}" alt="{col}" loading="lazy">
+</div>
+'''
+                else:
+                    grid += f'''<div class="card card-vital card-layer card-missing" id="{card_id}">
+  <div class="vital-caption">
+    <span class="vital-title">{title}</span>
+    <code class="vital-tech">{col or "—"}</code>
+    <p class="vital-hint">Coluna presente no dataset mas sem série plotável (sem dados).</p>
+  </div>
+</div>
+'''
+            else:
+                grid += f'''<div class="card card-vital card-layer card-missing">
+  <div class="vital-caption">
+    <span class="vital-title">{title}</span>
+    <code class="vital-tech">—</code>
+    <p class="vital-hint">Coluna ausente no CSV atual. Causas comuns: (1) variância zero no merge global — reexecute <code>01_clean_and_merge.py</code> após whitelist; (2) correlação &gt;95% no módulo 02 — métricas críticas estão na whitelist; (3) Prometheus não expôs a série neste run. {hint}</p>
+  </div>
+</div>
+'''
+        grid += '</div>\n'
+        blocks.append(hdr + grid)
+    return (
+        '<section class="layer-view-root" id="visao-por-camada">\n'
+        '<h2 class="section-title primary-title">Visão por camada (prefixo)</h2>\n'
+        '<p class="primary-lede">Até três gráficos sugeridos por família de métricas. '
+        'Em cada bloco: o que observar e alertas típicos. '
+        'Tomcat só interpreta no <strong>blocking</strong>; Netty/reactor no <strong>reactive</strong>.</p>\n'
+        + "\n".join(blocks)
+        + "\n" + layer_diagnostic_patterns_html()
+        + "\n</section>"
+    )
+
+
+def build_layer_nav_html(category_specs: list[dict]) -> str:
+    """Sidebar links for layer view: category headers + each resolved metric."""
+    ncat = len(category_specs)
+    lines: list[str] = [
+        f'<a class="nav-group" href="#visao-por-camada">Visão por camada '
+        f'<span class="nav-count">{ncat}</span></a>\n',
+    ]
+    for cat in category_specs:
+        cid = cat["category_id"]
+        safe_id = re.sub(r'[^a-z0-9_-]', '-', cid.lower())
+        n = sum(1 for c, _, _ in cat["resolved"] if c)
+        lines.append(
+            f'<a class="nav-group" href="#layer-{safe_id}">{cat["category_title"]} '
+            f'<span class="nav-count">{n}</span></a>\n'
+        )
+        for col, title, _ in cat["resolved"]:
+            if not col:
+                continue
+            card_id = f'layer-{safe_id}-{re.sub(r"[^a-zA-Z0-9_-]", "_", col)}'
+            short = title[:52] + ('…' if len(title) > 52 else '')
+            lines.append(f'  <a class="nav-metric nav-layer" href="#{card_id}">{short}</a>\n')
+    return ''.join(lines)
 
 
 def is_counter(col_name: str) -> bool:
@@ -339,13 +796,27 @@ def assign_group(col_name: str) -> str:
     return "Outras Métricas"
 
 
-def compute_kpis(df: pd.DataFrame) -> list[dict]:
+def scenario_columns(df: pd.DataFrame) -> list[str]:
+    """Return scenario columns ordered by CASE_STYLES key order."""
+    if 'meta_architecture' not in df.columns or 'meta_endpoint' not in df.columns:
+        return []
+    out: list[str] = []
+    present = {
+        (str(a), str(e))
+        for a, e in df[['meta_architecture', 'meta_endpoint']].dropna().itertuples(index=False)
+    }
+    for arch, endpoint in CASE_STYLES.keys():
+        if (arch, endpoint) in present:
+            out.append(f'{arch}/{endpoint}')
+    return out
+
+
+def compute_kpis(df: pd.DataFrame, scenarios: list[str]) -> list[dict]:
     """
-    For each KPI in KPI_CONFIG, compute a per-architecture mean value.
+    For each KPI in KPI_CONFIG, compute a per-scenario mean value.
     Returns list of dicts ready for the HTML cards.
     """
     results = []
-    architectures = sorted(df['meta_architecture'].unique()) if 'meta_architecture' in df.columns else []
 
     for kpi in KPI_CONFIG:
         prefix = kpi['col_prefix']
@@ -372,64 +843,192 @@ def compute_kpis(df: pd.DataFrame) -> list[dict]:
         if col is None:
             continue
 
-        arch_values = {}
-        for arch in architectures:
-            mask = df['meta_architecture'] == arch
-            sub_arch = df[mask].copy()
-            if sub_arch.empty:
-                arch_values[arch] = None
+        scenario_values = {}
+        for scenario in scenarios:
+            arch, endpoint = scenario.split('/', 1)
+            mask = (df['meta_architecture'] == arch) & (df['meta_endpoint'] == endpoint)
+            sub = df[mask][['timestamp', col]].dropna().sort_values('timestamp')
+            if sub.empty:
+                scenario_values[scenario] = None
                 continue
 
-            # Counters are computed per endpoint first to avoid false resets when
-            # mixing raw/base64 runs in the same architecture.
-            if kpi['is_counter'] and 'meta_endpoint' in sub_arch.columns:
-                per_endpoint_vals = []
-                for endpoint in sorted(sub_arch['meta_endpoint'].dropna().unique()):
-                    sub = sub_arch[sub_arch['meta_endpoint'] == endpoint][['timestamp', col]].dropna().sort_values('timestamp')
-                    if sub.empty:
-                        continue
+            # Ponto B (Warmup): Ignorar os primeiros 15% dos dados
+            cutoff = int(len(sub) * 0.15)
+            steady = sub.iloc[cutoff:]
+            if steady.empty:
+                scenario_values[scenario] = None
+                continue
 
-                    # Ponto B (Warmup): Ignorar os primeiros 15% dos dados também para counters para não poluir o steady state rate
-                    cutoff = int(len(sub) * 0.15)
-                    sub = sub.iloc[cutoff:]
-                    if sub.empty:
-                        continue
-
-                    rate = compute_rate_series(sub['timestamp'], sub[col])
-                    if not rate.dropna().empty:
-                        per_endpoint_vals.append(float(rate.dropna().mean()))
-                val = float(np.mean(per_endpoint_vals)) if per_endpoint_vals else None
+            if kpi['is_counter']:
+                rate = compute_rate_series(steady['timestamp'], steady[col])
+                val = float(rate.dropna().mean()) if not rate.dropna().empty else None
             else:
-                sub = sub_arch[['timestamp', col]].dropna().sort_values('timestamp')
-                if sub.empty:
-                    arch_values[arch] = None
-                    continue
-
-                # Ponto B (Warmup): Ignorar os primeiros 15% dos dados
-                cutoff = int(len(sub) * 0.15)
-                steady = sub.iloc[cutoff:]
-                if steady.empty:
-                    arch_values[arch] = None
-                    continue
-
-                if kpi['is_counter']:
-                    rate = compute_rate_series(steady['timestamp'], steady[col])
-                    val = float(rate.dropna().mean()) if not rate.dropna().empty else None
-                else:
-                    val = float(steady[col].mean()) if not steady.empty else None
+                val = float(steady[col].mean()) if not steady.empty else None
 
             if val is not None:
                 val *= kpi['multiplier']
-            arch_values[arch] = val
+            scenario_values[scenario] = val
 
         results.append({
             'label': label,
             'unit': kpi['unit'],
             'better': kpi['better'],
             'col': col,
-            'values': arch_values,
+            'values': scenario_values,
         })
     return results
+
+
+def parse_summary_filename(path: str):
+    """
+    Parse k6 summary file name.
+    Ex: stress-base64-20260327-021408-reactive-checkpoint_2.json
+    """
+    base = os.path.basename(path).replace('.json', '')
+    m = re.match(
+        r'^(?P<test>[^-]+)-(?P<endpoint>raw|base64)-(?P<date>\d{8})-(?P<time>\d{6})(?:-(?P<arch>reactive))?-(?P<label>.+)$',
+        base,
+    )
+    if not m:
+        return None
+    arch = 'reactive' if m.group('arch') == 'reactive' else 'blocking'
+    return {
+        'arch': arch,
+        'endpoint': m.group('endpoint'),
+        'scenario': f"{arch}/{m.group('endpoint')}",
+        'label': m.group('label'),
+        'stamp': f"{m.group('date')}-{m.group('time')}",
+        'file': path,
+    }
+
+
+def _k6_latency_threshold_failures_recomputed(metric_block: dict | None) -> int:
+    """
+    Decide SLO de latência pelo valor real de p(95)/p(90), não pelo mapa thresholds do k6
+    (o k6 pode marcar false com p(95) dentro do limite ou com submétrica sem tráfego).
+    """
+    if not metric_block or not isinstance(metric_block, dict):
+        return 0
+    th = metric_block.get("thresholds")
+    if not isinstance(th, dict) or not th:
+        return 0
+    p95 = metric_block.get("p(95)")
+    p90 = metric_block.get("p(90)")
+    med = metric_block.get("med")
+    max_v = metric_block.get("max")
+    # Sem tráfego para este endpoint: tudo zero — não contar como violação
+    if (
+        p95 is not None
+        and float(p95) == 0.0
+        and (max_v is None or float(max_v) == 0.0)
+        and (med is None or float(med) == 0.0)
+    ):
+        return 0
+    failures = 0
+    for expr in th.keys():
+        expr_clean = str(expr).replace(" ", "")
+        m95 = re.match(r"^p\(95\)<(\d+(?:\.\d+)?)$", expr_clean)
+        if m95 and p95 is not None:
+            limit = float(m95.group(1))
+            if float(p95) >= limit:
+                failures += 1
+            continue
+        m90 = re.match(r"^p\(90\)<(\d+(?:\.\d+)?)$", expr_clean)
+        if m90 and p90 is not None:
+            limit = float(m90.group(1))
+            if float(p90) >= limit:
+                failures += 1
+    return failures
+
+
+def load_execution_health(base_dir: str, labels: list[str], scenarios: list[str]) -> dict[str, dict]:
+    """
+    Read k6 summaries and return health status per scenario.
+    """
+    summaries_dir = os.path.join(base_dir, "results", "k6-exports", "summaries")
+    files = glob.glob(os.path.join(summaries_dir, "*.json"))
+    candidates = []
+    for f in files:
+        meta = parse_summary_filename(f)
+        if not meta:
+            continue
+        if labels and meta['label'] not in labels:
+            continue
+        if meta['scenario'] in scenarios:
+            candidates.append(meta)
+
+    latest_by_scenario = {}
+    for meta in sorted(candidates, key=lambda x: x['stamp']):
+        latest_by_scenario[meta['scenario']] = meta
+
+    out: dict[str, dict] = {}
+    for scenario in scenarios:
+        meta = latest_by_scenario.get(scenario)
+        if not meta:
+            out[scenario] = {
+                "status": "Sem summary",
+                "http_req_failed_pct": None,
+                "server_errors": None,
+                "timeout_errors": None,
+                "connection_errors": None,
+                "check_fails": None,
+                "threshold_failures": None,
+                "file": None,
+            }
+            continue
+        try:
+            with open(meta['file'], "r", encoding="utf-8") as f:
+                payload = json.load(f)
+            metrics = payload.get("metrics", {})
+            checks = payload.get("root_group", {}).get("checks", {})
+            check_fails = int(sum(v.get("fails", 0) for v in checks.values())) if checks else 0
+            http_req_failed = float(metrics.get("http_req_failed", {}).get("value", 0.0)) * 100.0
+            server_errors = int(metrics.get("server_errors", {}).get("count", 0))
+            timeout_errors = int(metrics.get("timeout_errors", {}).get("count", 0))
+            connection_errors = int(metrics.get("connection_errors", {}).get("count", 0))
+            # Só o SLO de latência do endpoint deste cenário; recalcular pelo p(95) real,
+            # não pelo booleans em metrics.*.thresholds (k6 costuma marcar false incorretamente).
+            endpoint = meta['endpoint']
+            threshold_metric_key = f"http_req_duration{{endpoint:{endpoint}}}"
+            threshold_failures = _k6_latency_threshold_failures_recomputed(
+                metrics.get(threshold_metric_key)
+            )
+
+            has_failure = any([
+                http_req_failed > 0.0,
+                server_errors > 0,
+                timeout_errors > 0,
+                connection_errors > 0,
+                check_fails > 0,
+            ])
+            if has_failure:
+                status = "Com falhas"
+            elif threshold_failures > 0:
+                status = "Threshold violado"
+            else:
+                status = "OK"
+            out[scenario] = {
+                "status": status,
+                "http_req_failed_pct": http_req_failed,
+                "server_errors": server_errors,
+                "timeout_errors": timeout_errors,
+                "connection_errors": connection_errors,
+                "check_fails": check_fails,
+                "threshold_failures": threshold_failures,
+                "file": os.path.basename(meta['file']),
+            }
+        except Exception:
+            out[scenario] = {
+                "status": "Erro ao ler summary",
+                "http_req_failed_pct": None,
+                "server_errors": None,
+                "timeout_errors": None,
+                "connection_errors": None,
+                "check_fails": None,
+                "threshold_failures": None,
+                "file": os.path.basename(meta['file']),
+            }
+    return out
 
 
 def to_base64_png(fig) -> str:
@@ -500,59 +1099,28 @@ def plot_metric(
     return fig
 
 
-def kpi_html(kpi_results: list[dict], architectures: list[str]) -> str:
+def kpi_html(kpi_results: list[dict], scenarios: list[str]) -> str:
     """Generate HTML for the KPI comparison cards at the top."""
-    if not kpi_results or not architectures:
+    if not kpi_results or not scenarios:
         return ''
 
     # Column headers
     header_cells = '<th>Métrica</th>' + ''.join(
-        f'<th>{a}</th>' for a in architectures
+        f'<th>{s}</th>' for s in scenarios
     )
-    if len(architectures) == 2:
-        header_cells += '<th>Diferença</th>'
 
     rows = ''
     for kpi in kpi_results:
         vals = kpi['values']
-        better = kpi['better']
         unit = kpi['unit']
 
         cells = f'<td class="kpi-label">{kpi["label"]}<br><span class="kpi-unit">{unit if unit else "—"}</span></td>'
 
-        formatted = {}
-        for arch in architectures:
-            v = vals.get(arch)
-            formatted[arch] = f'{v:,.2f}' if v is not None else '—'
+        for s in scenarios:
+            v = vals.get(s)
+            cells += f'<td>{f"{v:,.2f}" if v is not None else "—"}</td>'
 
-        # Determine winner
-        numeric_vals = {a: vals.get(a) for a in architectures if vals.get(a) is not None}
-        winner = None
-        if len(numeric_vals) == 2:
-            a1, a2 = list(numeric_vals.keys())
-            v1, v2 = numeric_vals[a1], numeric_vals[a2]
-            if better == 'high':
-                winner = a1 if v1 > v2 else a2
-            else:
-                winner = a1 if v1 < v2 else a2
-
-        for arch in architectures:
-            css = 'kpi-winner' if arch == winner else 'kpi-loser' if (winner and arch != winner) else ''
-            cells += f'<td class="{css}">{formatted[arch]}</td>'
-
-        if len(architectures) == 2:
-            a1, a2 = architectures[0], architectures[1]
-            v1, v2 = vals.get(a1), vals.get(a2)
-            if v1 is not None and v2 is not None and v2 != 0:
-                pct = (v1 - v2) / v2 * 100
-                sign = '+' if pct > 0 else ''
-                color = '#a6e3a1' if (pct > 0 and better == 'high') or (pct < 0 and better == 'low') else '#f38ba8'
-                cells += f'<td style="color:{color};font-weight:600">{sign}{pct:.1f}%</td>'
-            else:
-                cells += '<td>—</td>'
-
-        direction = '↑ melhor' if better == 'high' else '↓ melhor'
-        rows += f'<tr title="{direction}">{cells}</tr>'
+        rows += f'<tr>{cells}</tr>'
 
     return f'''
 <section class="kpi-section">
@@ -562,9 +1130,53 @@ def kpi_html(kpi_results: list[dict], architectures: list[str]) -> str:
     <tbody>{rows}</tbody>
   </table>
   <p class="kpi-note">
-    <span style="color:#a6e3a1">■</span> melhor &nbsp;
-    <span style="color:#f38ba8">■</span> pior &nbsp;
-    Diferença calculada como ({architectures[0]} − {architectures[1]}) / {architectures[1]} × 100
+    Valores calculados no steady-state por cenário (arquitetura + endpoint), sem agregação entre raw/base64.
+  </p>
+</section>'''
+
+
+def execution_health_html(execution_health: dict[str, dict], scenarios: list[str]) -> str:
+    if not scenarios:
+        return ''
+    rows = ''
+    for s in scenarios:
+        item = execution_health.get(s, {})
+        status = item.get("status", "Sem dados")
+        if status == 'OK':
+            status_color = '#a6e3a1'
+        elif status == 'Threshold violado':
+            status_color = '#f9e2af'
+        elif status == 'Sem summary':
+            status_color = '#94e2d5'
+        else:
+            status_color = '#f38ba8'
+        def fmt(v, suffix=''):
+            return '—' if v is None else f'{v}{suffix}'
+        rows += (
+            "<tr>"
+            f"<td class=\"kpi-label\">{s}</td>"
+            f"<td style=\"color:{status_color};font-weight:700\">{status}</td>"
+            f"<td>{fmt(item.get('http_req_failed_pct'), '%')}</td>"
+            f"<td>{fmt(item.get('server_errors'))}</td>"
+            f"<td>{fmt(item.get('timeout_errors'))}</td>"
+            f"<td>{fmt(item.get('connection_errors'))}</td>"
+            f"<td>{fmt(item.get('check_fails'))}</td>"
+            f"<td>{fmt(item.get('threshold_failures'))}</td>"
+            f"<td class=\"kpi-unit\">{item.get('file') or '—'}</td>"
+            "</tr>"
+        )
+    return f'''
+<section class="kpi-section">
+  <h2 class="section-title">Saúde da execução (k6 summaries)</h2>
+  <table class="kpi-table">
+    <thead><tr>
+      <th>Cenário</th><th>Status</th><th>http_req_failed</th><th>server_errors</th>
+      <th>timeout_errors</th><th>connection_errors</th><th>check fails</th><th>threshold fails</th><th>summary</th>
+    </tr></thead>
+    <tbody>{rows}</tbody>
+  </table>
+  <p class="kpi-note">
+    Esta tabela deixa explícito se o teste concluiu sem falhas por cenário. Use em conjunto com os gráficos para interpretar throughput/latência.
   </p>
 </section>'''
 
@@ -578,9 +1190,12 @@ def build_html(
     architectures: list,
     endpoints: list,
     test_types: list,
+    scenarios: list[str],
     kpi_results: list,
+    execution_health: dict[str, dict],
     primary_specs: list[tuple[str, str, str]],
     detail_metric_count: int,
+    category_specs: list[dict],
 ) -> str:
     nav_links = ''
     cards_html = ''
@@ -650,7 +1265,14 @@ def build_html(
 </section>
 '''
 
-    kpi_block = kpi_html(kpi_results, architectures)
+    n_layer_metrics = sum(
+        1 for cat in category_specs for c, _, _ in cat["resolved"] if c
+    )
+    nav_layer = build_layer_nav_html(category_specs)
+    layer_section_html = category_layer_html(category_specs, metric_charts)
+
+    kpi_block = kpi_html(kpi_results, scenarios)
+    execution_health_block = execution_health_html(execution_health, scenarios)
 
     return f'''<!DOCTYPE html>
 <html lang="pt-BR">
@@ -710,6 +1332,66 @@ def build_html(
     display: inline-block; background: #313244; border-radius: 999px;
     padding: 0 .4rem; font-size: .65rem; color: var(--muted); margin-left: .2rem;
   }}
+  .nav-layer {{ color: #89dceb !important; }}
+
+  .view-switch {{
+    display: flex; gap: .5rem; flex-wrap: wrap; margin: 1rem 0 1.25rem;
+    align-items: center;
+  }}
+  .view-switch button {{
+    background: #313244; border: 1px solid var(--border); color: var(--muted);
+    border-radius: 999px; padding: .35rem 1rem; font-size: .78rem; cursor: pointer;
+    font-family: inherit;
+  }}
+  .view-switch button:hover {{ color: var(--text); border-color: #45475a; }}
+  .view-switch button.active {{
+    color: var(--text); border-color: var(--accent);
+    box-shadow: 0 0 0 1px rgba(137, 180, 250, 0.35);
+  }}
+  .aside-nav-view[hidden] {{ display: none !important; }}
+  .report-view-panel[hidden] {{ display: none !important; }}
+  .category-lede {{ font-size: .78rem; color: var(--muted); margin: -.25rem 0 .9rem; max-width: 880px; line-height: 1.5; }}
+  .layer-cat-header {{ margin-top: 1.75rem; }}
+  .card-layer {{ border-left-color: #89b4fa; }}
+  .card-missing .vital-caption {{ background: rgba(243, 139, 168, 0.06); border-left: 4px solid #f38ba8; }}
+  .layer-guide {{
+    background: rgba(137, 180, 250, 0.06);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: .65rem .85rem;
+    margin: 0 0 1rem 0;
+    font-size: .76rem;
+    line-height: 1.45;
+    color: var(--muted);
+  }}
+  .layer-guide-role {{ margin-bottom: .5rem; color: var(--text); }}
+  .layer-guide-cols {{
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: .75rem 1.25rem;
+  }}
+  .layer-guide-ul {{ margin: .25rem 0 0 1rem; padding: 0; }}
+  .layer-guide-ul li {{ margin-bottom: .2rem; }}
+  .layer-patterns {{ margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--border); }}
+  .layer-patterns-title {{ color: #cba6f7; font-size: .95rem; margin-bottom: .35rem; }}
+  .layer-patterns-lede {{ font-size: .78rem; color: var(--muted); margin-bottom: 1rem; max-width: 920px; line-height: 1.5; }}
+  .pattern-grid {{
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: .75rem;
+  }}
+  .pattern-card {{
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: .65rem .75rem;
+    font-size: .74rem;
+    line-height: 1.45;
+    color: var(--muted);
+  }}
+  .pattern-title {{ color: var(--accent); font-weight: 600; margin-bottom: .35rem; font-size: .78rem; }}
+  .pattern-signals {{ margin-bottom: .35rem; }}
+  .pattern-dx {{ color: #a6e3a1; }}
 
   main {{ margin-left: 230px; padding: 1.5rem 2rem 4rem; }}
 
@@ -813,9 +1495,15 @@ def build_html(
 
 <aside>
   <p style="color:var(--muted);font-size:.7rem;padding:.25rem .5rem;margin-bottom:.25rem;">
-    {len(primary_specs)} em destaque · {detail_metric_count} complementares · {len(grouped_metrics)} grupos
+    Padrão: {len(primary_specs)} destaque · {detail_metric_count} detalhe · {len(grouped_metrics)} grupos
+    · Camada: {n_layer_metrics} gráficos em {len(category_specs)} categorias
   </p>
-  {nav_links}
+  <div id="aside-nav-default" class="aside-nav-view">
+{nav_links}
+  </div>
+  <div id="aside-nav-layer" class="aside-nav-view" hidden>
+{nav_layer}
+  </div>
 </aside>
 
 <main>
@@ -838,14 +1526,23 @@ def build_html(
     <div class="howto-grid">
       <div class="howto-item"><strong>HTTP:</strong> p95/p99 e waiting baixos com req/s estável são bons; picos persistentes de latência com req/s caindo indicam fila/saturação.</div>
       <div class="howto-item"><strong>k6:</strong> prioridade para <code>http_req_failed</code>, <code>http_req_duration_p99</code> e <code>k6_http_reqs_total</code>; throughput alto com erro baixo é o alvo.</div>
+      <div class="howto-item"><strong>Erros:</strong> se o gráfico de erro ficar próximo de zero mas a tabela de saúde mostrar falhas, o problema pode estar em thresholds/checks e não em 5xx contínuo.</div>
       <div class="howto-item"><strong>JVM:</strong> heap/GC estáveis são saudáveis; crescimento contínuo de heap + pausas GC maiores sugerem pressão de memória.</div>
       <div class="howto-item"><strong>Container:</strong> <code>container_cpu_cfs_throttled_periods_total</code> alto é alerta de CPU limitada; memória em rampa sem retorno pode indicar risco de OOM.</div>
       <div class="howto-item"><strong>Tomcat (blocking):</strong> use para a arquitetura servlet; <code>tomcat_connections_current_connections</code> e tempos máximos altos com latência piorando indicam saturação.</div>
       <div class="howto-item"><strong>Netty (reactive):</strong> use para WebFlux; <code>reactor_netty_*_active</code> e filas/pending altos com latência alta apontam gargalo reativo.</div>
+      <div class="howto-item"><strong>Histograma/Buckets:</strong> métricas com sufixo <code>_bucket</code> são contadores de histogramas; quedas/linhas planas costumam refletir seleção de bucket ou ausência de evento, não necessariamente queda real de tráfego.</div>
+      <div class="howto-item"><strong>Threads:</strong> no reativo, thread count tende a ser menor e mais estável que no blocking; isso é esperado por arquitetura, não ausência de dados.</div>
     </div>
   </section>
 
   {kpi_block}
+  {execution_health_block}
+
+  <div class="view-switch" role="tablist" aria-label="Modo de visualização dos gráficos">
+    <button type="button" class="active" id="btn-view-default" aria-selected="true">Visão padrão (destaque + detalhe)</button>
+    <button type="button" id="btn-view-layer" aria-selected="false">Visão por camada (prefixo)</button>
+  </div>
 
   <div class="legend-bar">
     <div class="legend-item">
@@ -866,6 +1563,7 @@ def build_html(
     Gráficos <code>tomcat_*</code> vs <code>reactor_netty_*</code>: compare cada família apenas com o contexto da arquitetura indicada na legenda (blocking vs reactive).
   </p>
 
+  <div id="report-view-default" class="report-view-panel">
   {primary_section}
 
   <h2 class="section-title detail-header" style="margin-top:2rem;">Análise detalhada (complementar)</h2>
@@ -875,7 +1573,38 @@ def build_html(
 
   <br>
   {cards_html}
+  </div>
+
+  <div id="report-view-layer" class="report-view-panel" hidden>
+{layer_section_html}
+  </div>
 </main>
+<script>
+(function() {{
+  var bDef = document.getElementById('btn-view-default');
+  var bLay = document.getElementById('btn-view-layer');
+  var pDef = document.getElementById('report-view-default');
+  var pLay = document.getElementById('report-view-layer');
+  var nDef = document.getElementById('aside-nav-default');
+  var nLay = document.getElementById('aside-nav-layer');
+  function showDefault(isDef) {{
+    if (pDef) pDef.hidden = !isDef;
+    if (pLay) pLay.hidden = isDef;
+    if (nDef) nDef.hidden = !isDef;
+    if (nLay) nLay.hidden = isDef;
+    if (bDef) {{
+      bDef.classList.toggle('active', isDef);
+      bDef.setAttribute('aria-selected', isDef ? 'true' : 'false');
+    }}
+    if (bLay) {{
+      bLay.classList.toggle('active', !isDef);
+      bLay.setAttribute('aria-selected', (!isDef).toString());
+    }}
+  }}
+  if (bDef) bDef.addEventListener('click', function() {{ showDefault(true); }});
+  if (bLay) bLay.addEventListener('click', function() {{ showDefault(false); }});
+}})();
+</script>
 </body>
 </html>'''
 
@@ -889,13 +1618,22 @@ def main():
     dataset_dir = os.path.join(base_dir, "analise", "datasets")
     reports_dir = os.path.join(base_dir, "analise", "relatorios")
     os.makedirs(reports_dir, exist_ok=True)
+    label_filter = os.environ.get("RUN_LABEL_FILTER", "").strip()
 
-    files = glob.glob(os.path.join(dataset_dir, "02_reduced_*.csv"))
-    if not files:
-        files = glob.glob(os.path.join(dataset_dir, "dataset_ouro_reduzido*.csv"))
-    if not files:
-        print(f"❌ CSV do Módulo 02 não encontrado em: {dataset_dir}")
-        return
+    if label_filter:
+        files = glob.glob(os.path.join(dataset_dir, f"02_reduced_{label_filter}_*.csv"))
+        if not files:
+            print(f"❌ Nenhum CSV 02_reduced_{label_filter}_*.csv em: {dataset_dir}")
+            print(f"   Gere a cadeia com RUN_LABEL_FILTER={label_filter} (01 → 02 → 03).")
+            return
+        print(f"🔖 RUN_LABEL_FILTER='{label_filter}' — apenas ficheiros 02_reduced_{label_filter}_*.csv")
+    else:
+        files = glob.glob(os.path.join(dataset_dir, "02_reduced_*.csv"))
+        if not files:
+            files = glob.glob(os.path.join(dataset_dir, "dataset_ouro_reduzido*.csv"))
+        if not files:
+            print(f"❌ CSV do Módulo 02 não encontrado em: {dataset_dir}")
+            return
 
     infile = max(files, key=os.path.getctime)
     df = pd.read_csv(infile)
@@ -912,6 +1650,8 @@ def main():
     architectures = sorted(df['meta_architecture'].unique().tolist()) if 'meta_architecture' in df.columns else []
     endpoints     = sorted(df['meta_endpoint'].unique().tolist())     if 'meta_endpoint'     in df.columns else []
     test_types    = sorted(df['meta_test_type'].unique().tolist())    if 'meta_test_type'    in df.columns else []
+    scenarios     = scenario_columns(df)
+    labels        = sorted(df['meta_label'].dropna().unique().tolist()) if 'meta_label' in df.columns else []
 
     merged_file = os.path.join(dataset_dir, f"01_merged_{file_suffix}.csv")
     raw_metric_count = "?"
@@ -946,6 +1686,8 @@ def main():
 
     primary_specs = resolve_primary_chart_metrics(metric_cols)
     primary_cols = {t[0] for t in primary_specs}
+    category_specs = resolve_category_layer_specs(metric_cols)
+    category_title_by_col = category_layer_title_overrides(category_specs)
     ordered_groups_detail: dict[str, list[str]] = {}
     for g_name, cols in ordered_groups.items():
         rest = [c for c in cols if c not in primary_cols]
@@ -956,25 +1698,43 @@ def main():
     for g, cols in ordered_groups.items():
         print(f"   {g}: {len(cols)} métricas")
     print(f"   → Visão principal (topo do HTML): até {len(primary_specs)} métricas selecionadas")
+    print(f"   → Visão por camada: {len(category_specs)} categorias (até 3 gráficos cada)")
 
     # ── Compute KPIs ──────────────────────────────────────────────────────────
     print("\n🔢 Calculando KPIs de comparação...")
-    kpi_results = compute_kpis(df)
+    kpi_results = compute_kpis(df, scenarios)
+    execution_health = load_execution_health(base_dir, labels, scenarios)
     for kpi in kpi_results:
-        vals_str = ' | '.join(f"{a}={kpi['values'].get(a, None):.2f}" if isinstance(kpi['values'].get(a), float) else f"{a}=N/A" for a in architectures)
+        vals_str = ' | '.join(
+            f"{s}={kpi['values'].get(s, None):.2f}" if isinstance(kpi['values'].get(s), float) else f"{s}=N/A"
+            for s in scenarios
+        )
         print(f"   {kpi['label']}: {vals_str}")
 
-    # ── Generate one chart per golden metric ──────────────────────────────────
+    # ── Generate charts: detalhe agrupado + métricas extras da visão por camada ─
     flat_order = [col for cols in ordered_groups.values() for col in cols]
+    layer_extra = flatten_category_columns(category_specs)
+    seen_plot: set[str] = set()
+    metrics_to_plot: list[str] = []
+    for m in flat_order:
+        if m not in seen_plot:
+            seen_plot.add(m)
+            metrics_to_plot.append(m)
+    for m in layer_extra:
+        if m not in seen_plot:
+            seen_plot.add(m)
+            metrics_to_plot.append(m)
+
     primary_title_by_col = {col: title for col, title, _ in primary_specs}
     metric_charts: dict[str, str] = {}
-    total = len(flat_order)
-    for i, metric in enumerate(flat_order, 1):
+    total = len(metrics_to_plot)
+    for i, metric in enumerate(metrics_to_plot, 1):
         rate_note = ' [rate]' if is_counter(metric) else ''
         print(f"  [{i:02}/{total}] {metric}{rate_note}")
+        title_disp = primary_title_by_col.get(metric) or category_title_by_col.get(metric)
         fig = plot_metric(
             metric, df, meta_cols,
-            title_display=primary_title_by_col.get(metric),
+            title_display=title_disp,
         )
         if fig is None:
             print(f"         ⚠ sem dados, pulando")
@@ -995,9 +1755,12 @@ def main():
         architectures=architectures,
         endpoints=endpoints,
         test_types=test_types,
+        scenarios=scenarios,
         kpi_results=kpi_results,
+        execution_health=execution_health,
         primary_specs=primary_visible,
         detail_metric_count=detail_n,
+        category_specs=category_specs,
     )
 
     report_path = os.path.join(reports_dir, f"REPORT_{file_suffix}.html")
