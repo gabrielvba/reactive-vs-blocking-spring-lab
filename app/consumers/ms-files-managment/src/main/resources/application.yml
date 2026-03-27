@@ -26,6 +26,8 @@ file:
 
 server:
   port: 8080
+  http2:
+    enabled: true
   tomcat:
     mbeanregistry:
       enabled: true

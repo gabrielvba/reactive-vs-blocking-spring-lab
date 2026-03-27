@@ -25,24 +25,24 @@ public class RestClientConfig {
 		
 		// Configuração de timeouts e keep-alive
 		ConnectionConfig connectionConfig = ConnectionConfig.custom()
-				.setConnectTimeout(Timeout.of(30, TimeUnit.SECONDS))
-				.setSocketTimeout(Timeout.of(30, TimeUnit.SECONDS))
-				.setTimeToLive(Timeout.of(60, TimeUnit.SECONDS))  // Reciclar conexões após 60s
+				.setConnectTimeout(Timeout.of(5, TimeUnit.SECONDS))
+				.setSocketTimeout(Timeout.of(10, TimeUnit.SECONDS))
+				.setTimeToLive(Timeout.of(30, TimeUnit.SECONDS))  // Reciclar conexões após 30s
 				.build();
 		
 		connectionManager.setDefaultConnectionConfig(connectionConfig);
 		
 		// Configuração de request
 		RequestConfig requestConfig = RequestConfig.custom()
-				.setConnectionRequestTimeout(Timeout.of(45, TimeUnit.SECONDS))  // Timeout ao pegar do pool
-				.setResponseTimeout(Timeout.of(30, TimeUnit.SECONDS))
+				.setConnectionRequestTimeout(Timeout.of(5, TimeUnit.SECONDS))  // Timeout ao pegar do pool
+				.setResponseTimeout(Timeout.of(10, TimeUnit.SECONDS))
 				.build();
 		
 		// HttpClient com pool
 		HttpClient httpClient = HttpClientBuilder.create()
 				.setConnectionManager(connectionManager)
 				.setDefaultRequestConfig(requestConfig)
-				.evictIdleConnections(Timeout.of(20, TimeUnit.SECONDS))  // Limpar conexões ociosas
+				.evictIdleConnections(Timeout.of(10, TimeUnit.SECONDS))  // Limpar conexões ociosas
 				.build();
 		
 		HttpComponentsClientHttpRequestFactory factory = new HttpComponentsClientHttpRequestFactory(
