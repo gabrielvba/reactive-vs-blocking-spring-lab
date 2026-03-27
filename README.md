@@ -47,9 +47,10 @@ Cada decisão arquitetural tem custo. Este projeto permite **quantificar** essas
 
 | Componente | Porta | Responsabilidade |
 |------------|-------|------------------|
-| **ms-files-managment** | 8080 | Consome imagens, transforma (Base64), expõe APIs |
+| **ms-files-managment** | 8080 | Consumer Spring MVC (blocking); consome imagens, Base64, APIs |
+| **ms-files-management-reactive** | 8083 | Consumer WebFlux/Netty; mesma função que o blocking, para comparação |
 | **ms-producer-picture** | 8081 | Fornece imagens em cache (9 tamanhos: 100KB-12MB) |
-| **Prometheus** | 9090 | Coleta métricas time-series de ambos serviços |
+| **Prometheus** | 9090 | Coleta métricas time-series dos serviços |
 | **Grafana** | 3000 | Dashboards pré-configurados para análise |
 | **cAdvisor** | 8082 | Métricas de containers (CPU, RAM, I/O) |
 
@@ -73,10 +74,9 @@ curl http://localhost:8080/file/base64/1018kb
 # http://localhost:3000 (admin/admin)
 # Dashboards principais estarão na pasta "Dashboards / microservices-ecosystem"
 
-# 5. Executar os testes de performance localmente (requer bash/Git Bash e k6 instalados)
-# Os testes rodam a partir da máquina host para precisão máxima de carga:
-bash ./tests/run-k6.sh warmup mixed
-bash ./tests/run-k6.sh load raw baseline
+# 5. Executar os testes de performance a partir da raiz do repositório (Python 3 + k6 no PATH ou tests/k6.exe no Windows)
+python tests/run-k6.py warmup mixed
+python tests/run-k6.py load raw baseline
 
 # 6. Visualizar resultados
 # - Durante o teste: Acompanhe no Grafana os painéis em tempo real. O k6 envia métricas continuamente.
@@ -125,11 +125,11 @@ Enquanto o `k6` está rodando, ele **envia métricas em tempo real (Remote Write
 1. **Garantir que a infraestrutura está online**: `docker-compose up -d`
 2. **Warmup**: Sempre execute um aquecimento antes dos testes oficiais.
    ```bash
-   ./tests/run-k6.sh warmup mixed 
+   python tests/run-k6.py warmup mixed
    ```
 3. **Baseline**: Rodar o teste oficial e capturar métricas atuais.
    ```bash
-   ./tests/run-k6.sh load base64 baseline_atual
+   python tests/run-k6.py load base64 baseline_atual
    ```
 4. **Visualização no Grafana**: Abra o link [http://localhost:3000](http://localhost:3000) (login: `admin` / senha: `admin`) para ver as métricas sendo populadas em tempo real nos dashboards pré-configurados:
    - **MS Files Management** (Para os testes na API Tradicional/Blocking)
@@ -138,22 +138,22 @@ Enquanto o `k6` está rodando, ele **envia métricas em tempo real (Remote Write
 
 ### Entendendo os Parâmetros do Script de Teste
 
-A sintaxe geral do script é:
+A sintaxe geral do orquestrador é:
 ```bash
-./tests/run-k6.sh <TIPO_DE_TESTE> <TIPO_DE_ENDPOINT> <LABEL_OPCIONAL>
+python tests/run-k6.py <TIPO_DE_TESTE> <MODO_OU_ENDPOINT> <LABEL_OPCIONAL>
 ```
 
 **1. `<TIPO_DE_TESTE>`** (Valores possíveis: `warmup`, `load`, `stress`)
 - `warmup`: Faz um "**aquecimento**" da aplicação. Manda um baixo volume de tráfego por poucos minutos **antes** dos testes reais. 
   - *Por que aquecer?* Em Java, o "warmup" aciona o compilador JIT (Just-In-Time) que otimiza o código em tempo de execução, carrega as classes na memória, abre os pools de conexões e popula os caches de arquivos. Se rodar um teste "frio", as latências serão falsamente altas.
-- `load`: Teste de carga normal. Simula tráfego constante (ex: 200 Usuários Virtuais) para tirar uma medição confiável da performance base.
-- `stress`: Teste extremo. Injeta agressivamente até 800 Usuários Virtuais para encontrar o exato ponto de quebra (bottlenecks) onde requisições começam a falhar ou travar a CPU.
+- `load`: Teste de carga normal. Simula tráfego constante (ex.: rampa até 200 VUs) para tirar uma medição confiável da performance base.
+- `stress`: Teste extremo. Rampa até **400** Usuários Virtuais (`03-stress-test.js`) para encontrar o ponto de saturação e falhas/timeouts.
 
-**2. `<TIPO_DE_ENDPOINT>`** (Valores possíveis: `raw`, `base64`, `mixed`, `both`)
-- `raw`: Consumirá exclusivamente os endpoints de imagem binária original.
-- `base64`: Consumirá exclusivamente os endpoints de conversão de imagem para String Base64.
-- `mixed`: **Misto**. Balanceará as requisições (50% `raw` / 50% `base64`), simulando uso do mundo real de uma API de propósitos múltiplos.
-- `both`: Um modo sequencial utilitário. Ele vai executar o mesmo teste DUAS VEZES sozinho: primeiro apenas `raw`, aguardará 30 segundos de cooldown, e engatará o teste `base64`.
+**2. `<MODO_OU_ENDPOINT>`** — `blocking` \| `reactive` \| `both` \| `raw` \| `base64` \| `mixed`
+- `blocking`: No consumer **8080**, executa em sequência `raw` e depois `base64` (com cooldown entre eles).
+- `reactive`: No consumer **8083** (WebFlux), mesma sequência `raw` → `base64`.
+- `both`: Primeiro `blocking` (8080), cooldown longo, depois `reactive` (8083) — quatro baterias no total; ideal para comparar arquiteturas numa única execução.
+- `raw` / `base64` / `mixed`: Apenas na porta **8080** — um único tipo de endpoint por execução (`mixed` = 50% raw / 50% base64).
 
 **3. `<LABEL_OPCIONAL>`** (Qualquer texto de sua escolha sem espaços)
 - Nome para identificar o seu relatório nos arquivos JSON salvos na pasta `results/` e nos exports do Prometheus. Ex: `baseline`, `teste-com-gzip`.
@@ -161,20 +161,23 @@ A sintaxe geral do script é:
 ### Casos de Teste Mais Comuns
 
 ```bash
-# 1. O Aquecimento antes de tudo (Tráfego pequeno para o JIT Compiler otimizar o código)
-./tests/run-k6.sh warmup mixed aquecimento_inicial
+# 1. Aquecimento (JIT, caches) — endpoint misto na porta 8080
+python tests/run-k6.py warmup mixed aquecimento_inicial
 
-# 2. Testando uma funcionalidade individual (Apenas Base64) e medindo no relatório 'exp1_base64'
-./tests/run-k6.sh load base64 exp1_base64
+# 2. Carga só Base64 na porta 8080
+python tests/run-k6.py load base64 exp1_base64
 
-# 3. Testando individualmente o trafego puramente Binário (Raw)
-./tests/run-k6.sh load raw exp2_binary
+# 3. Carga só Raw na porta 8080
+python tests/run-k6.py load raw exp2_binary
 
-# 4. Modo Sequencial Prático: Roda o teste para Raw, descansa 30s, e roda para Base64 automaticamente
-./tests/run-k6.sh load both comparacao_automatica
+# 4. Blocking: raw e base64 em sequência no Tomcat (8080)
+python tests/run-k6.py load blocking comparacao_blocking
 
-# 5. Estressando a aplicação até o limite com chamadas em ambos endpoints
-./tests/run-k6.sh stress mixed teste_extremo_limite
+# 5. Ambas as arquiteturas: blocking (8080) depois reactive (8083)
+python tests/run-k6.py load both comparacao_automatica
+
+# 6. Stress com tráfego misto na porta 8080
+python tests/run-k6.py stress mixed teste_extremo_limite
 
 # Comparar resultados em:
 # - Grafana: observe a latência, CPU, memória (dashboards atualizam no momento do teste)
@@ -186,13 +189,13 @@ A sintaxe geral do script é:
 - Base64: +33% tamanho, +133% memória, 2-3x mais latência
 - Binary: Menor latência, menos CPU, mais throughput
 
-### Scripts k6 Disponíveis (Chamados internamente por run-k6.sh)
+### Scripts k6 Disponíveis (invocados por `tests/run-k6.py`)
 
 | Script | Duração | VUs | Objetivo |
 |--------|---------|-----|----------|
 | `01-warmup.js` | 3.5min | 10 | Aquecer cache antes de experimentos e disparar JIT compiler |
 | `02-load-test.js` | 6min | 0→200 | Teste de carga normal (thresholds rigorosos para encontrar lentidões) |
-| `03-stress-test.js` | 18min | 0→800 | Encontrar limites e gargalos do sistema sob estresse severo |
+| `03-stress-test.js` | 18min | 0→400 | Encontrar limites e gargalos do sistema sob estresse severo |
 
 Detalhes em [tests/README.md](tests/README.md)
 
@@ -212,7 +215,7 @@ microservices-ecosystem/
 │       ├── dashboards/              # Dashboards JSON que refletem os dados do Prometheus com gráficos prontos.
 │       └── datasources/             # Datasource apontando para o msf-prometheus interno.
 ├── tests/                           # Pasta contendo os roteiros de teste e load generator.
-│   ├── run-k6.sh                    # Script bash principal que executa o k6 e integra com Prometheus Remote Write.
+│   ├── run-k6.py                    # Orquestrador Python: k6 + Remote Write + export de séries temporais.
 │   ├── *.js                         # Rotinas do k6 (warmup, load test, e stress test).
 ├── docs/                            # Documentação aprofundada (trade-offs, legado, checkpoint).
 ├── results/                         # Diretório centralizado com logs, extrações JSON e scripts Python de processamento e Markdown de Testes.
@@ -223,22 +226,19 @@ microservices-ecosystem/
 
 ## 🔬 Próximos Experimentos (Roadmap)
 
-Cada item abaixo é uma **hipótese a ser testada**:
+Itens já cobertos no código atual aparecem como **implementado**; o restante permanece como hipótese.
 
-### 1️⃣ Virtual Threads (Java 21)
-**Hipótese**: Reduz uso de memória e aumenta throughput
-**Como testar**: Habilitar `spring.threads.virtual.enabled=true`
-**Métricas**: Threads count, latência P95, throughput
+### 1️⃣ Virtual Threads (Java 21) — **implementado** no `ms-files-managment`
+**Estado**: `spring.threads.virtual.enabled=true` (e configuração associada) no consumer blocking.  
+**Métricas**: Threads count, latência P95, throughput — comparar runs no Grafana / pipeline `analise/`.
 
-### 2️⃣ Spring WebFlux (Reactive)
-**Hipótese**: Melhor performance sob alta concorrência
-**Como testar**: Criar `ms-files-reactive` com WebFlux
-**Métricas**: Comparar latência e CPU vs blocking
+### 2️⃣ Spring WebFlux (Reactive) — **implementado** em `ms-files-management-reactive` (:8083)
+**Como comparar**: `python tests/run-k6.py load both <label>` ou painel **MS Files Management - Reactive** no Grafana.  
+**Métricas**: Latência e CPU vs blocking (Tomcat).
 
-### 3️⃣ HTTP/2
-**Hipótese**: Multiplexing reduz latência
-**Como testar**: Configurar HTTP/2 no Tomcat
-**Métricas**: Latência de requisições concorrentes
+### 3️⃣ HTTP/2 — **implementado** no Tomcat do consumer blocking (HTTP, não HTTPS)
+**Estado**: `server.http2.enabled=true` em `application.yml` do `ms-files-managment`.  
+**Métricas**: Latência sob concorrência; validar cenários no k6 conforme necessidade.
 
 ### 4️⃣ Compressão Gzip
 **Hipótese**: Reduz tráfego de rede, aumenta CPU
@@ -274,17 +274,18 @@ k6 run tests/02-load-test.js
 
 1. **Criar branch**: `git checkout -b exp/virtual-threads`
 2. **Implementar mudança**
-3. **Rodar baseline**: `tests/run-k6.sh load mixed baseline`
-4. **Rodar com mudança**: `tests/run-k6.sh load mixed virtual-threads`
+3. **Rodar baseline**: `python tests/run-k6.py load mixed baseline`
+4. **Rodar com mudança**: `python tests/run-k6.py load mixed virtual-threads`
 5. **Comparar métricas** no Grafana
 6. **Documentar resultados**
 
 ## 📚 Documentação Completa
 
-- **[`docs/CHECKPOINT_DOCUMENTACAO.md`](docs/CHECKPOINT_DOCUMENTACAO.md)**: Registro histórico de evolução, arquitetura, gargalos estudados e resumo do legado do projeto.
+- **[`docs/CHECKPOINT_DOCUMENTACAO.md`](docs/CHECKPOINT_DOCUMENTACAO.md)**: Ponto de entrada do checkpoint de performance e ligação ao relatório detalhado.
 - **[tests/README.md](tests/README.md)**: Guia completo de testes k6
 - **READMEs dos serviços**:
-  - [Consumer](app/consumers/ms-files-managment/README.md)
+  - [Consumer blocking](app/consumers/ms-files-managment/README.md)
+  - [Consumer reativo](app/consumers/ms-files-management-reactive/README.md)
   - [Provider](app/providers/ms-producer-picture/README.md)
 
 ## 🤝 Como Contribuir
@@ -385,7 +386,7 @@ curl http://localhost:8081/actuator/prometheus
 ### Lentidão repentina ou erros 5xx no k6
 ```bash
 # Lembre-se SEMPRE de rodar o Warmup em Java antes de atirar pesadamente! (para aquecer JIT Compiler)
-bash ./tests/run-k6.sh warmup mixed
+python tests/run-k6.py warmup mixed
 
 # Verifique as threads virtuais nos contêineres pelo Grafana ou os logs do provider para anomalias:
 docker-compose logs --tail=50 ms-producer-picture
@@ -420,4 +421,4 @@ O nome correto em inglês é **"management"** (com 'e'), não "managment".
 
 **📜 Licença**: Projeto educacional de código aberto
 **👨‍💻 Autor**: Laboratório de Performance em Microserviços
-**📅 Última atualização**: 2025-11-10
+**📅 Última atualização**: 2026-03-27
