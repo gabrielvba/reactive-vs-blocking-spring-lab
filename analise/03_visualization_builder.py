@@ -187,6 +187,80 @@ PRIMARY_CHART_SLOTS: list[dict] = [
 
 # Lista rígida para limitar quais métricas vão aparecer na seção de "Análise detalhada"
 # Para focar apenas nas que trazem grande representatividade, se o prefixo não estiver aqui, ele é ocultado.
+
+# ─── Dictionary of detailed hints ──────────────────────────────────────────
+DETAIL_HINTS = {
+    "http_server_requests_seconds_count": {"title": "Requisições HTTP (Servidor)", "hint": "Total de requisições recebidas pelo servidor. Indica o volume de tráfego bruto no backend."},
+    "http_server_requests_seconds_sum": {"title": "Tempo Total de Requisições HTTP", "hint": "Tempo cumulativo gasto processando requisições. Útil para calcular latência média ao cruzar com o total."},
+    "http_server_requests_active_seconds_bucket": {"title": "Histograma de Requisições Ativas", "hint": "Distribuição das requisições simultâneas em andamento."},
+    "http_server_requests_active_seconds_gsum": {"title": "Soma de Requisições Ativas", "hint": "Tempo total gasto por requisições ativas. Picos indicam acúmulo de processamento pendente."},
+    "http_server_errors": {"title": "Erros HTTP", "hint": "Contador de falhas 4xx/5xx devolvidas pelo servidor."},
+    "image_processed_bytes_total": {"title": "Bytes Processados", "hint": "Quantidade total de bytes de imagem trafegados. Define o throughput real de dados do negócio."},
+    "image_cache_hits_total": {"title": "Taxa de Acerto de Cache", "hint": "Quantas imagens foram servidas diretamente da memória sem reprocessamento."},
+    "k6_http_reqs_total": {"title": "Requisições Disparadas (k6)", "hint": "Volume de requisições geradas pelo k6. Se divergir do servidor, indica gargalos de rede ou conexões dropadas."},
+    "k6_http_req_duration_p99": {"title": "Latência P99", "hint": "Tempo total p99 percebido pelo cliente. 99% das requisições foram mais rápidas que este valor."},
+    "k6_http_req_waiting_p99": {"title": "Tempo de Fila / TTFB (P99)", "hint": "Tempo de Espera (Time To First Byte). Picos indicam que o servidor demorou a aceitar/iniciar o processamento."},
+    "k6_http_req_failed": {"title": "Taxa de Falha do Cliente", "hint": "Percentual de requisições que retornaram erro não-200 sob a ótica do k6."},
+    "k6_vus": {"title": "Usuários Virtuais (VUs)", "hint": "Número de VUs ativos injetando carga no momento."},
+    "jvm_memory_used_bytes": {"title": "Uso de Memória Heap", "hint": "Quantidade de RAM ativa usada pelo Java. Subidas em escada indicam alocação constante até a limpeza do GC."},
+    "jvm_threads_live_threads": {"title": "Threads Ativas", "hint": "Quantidade de threads vivas na JVM. No WebFlux deve ser baixo (~20); no Tomcat MVC escala com o tráfego."},
+    "jvm_gc_pause_seconds_max": {"title": "Pausas Máximas do GC", "hint": "Pior cenário de parada da aplicação (Stop-The-World). Afeta diretamente o P99 de latência."},
+    "jvm_gc_pause_seconds_count": {"title": "Frequência do GC", "hint": "Número de coletas de lixo. Se rodar muito frequentemente, o sistema perde CPU processando lixo em vez de requisições."},
+    "jvm_gc_pause_seconds_sum": {"title": "Tempo Total em GC", "hint": "Custo temporal acumulado gasto pelo Garbage Collector."},
+    "process_cpu_usage": {"title": "Uso de CPU", "hint": "Percentual de uso da CPU pelo processo Java. Importante para correlacionar com saturação e throughput."},
+    "process_resident_memory_bytes": {"title": "Memória Residente (RSS)", "hint": "Tamanho real alocado na RAM física para todo o processo, incluindo heap, metaspace e off-heap (Netty)."},
+    "container_memory_working_set_bytes": {"title": "Memória do Container", "hint": "Consumo de RAM visto pelo Docker. É a métrica oficial para disparar OOM Kill (Out Of Memory)."},
+    "container_cpu_cfs_throttled_periods_total": {"title": "Limitação de CPU (Throttling)", "hint": "Períodos em que o container estourou sua cota de CPU do cgroups e foi paralisado forçadamente."},
+    "container_cpu_cfs_throttled_seconds_total": {"title": "Tempo de Throttling", "hint": "Soma de segundos perdidos com o container 'congelado' pelo Docker/Kubernetes por excesso de uso de CPU."},
+    "tomcat_threads_current_threads": {"title": "Threads do Tomcat", "hint": "Threads do pool do Tomcat. Se chegar no limite (ex: 200), novas conexões ficam na fila."},
+    "tomcat_connections_current_connections": {"title": "Conexões Tomcat", "hint": "Quantidade de sockets abertos atendendo requisições bloqueantes."},
+    "reactor_netty_http_server_connections_active": {"title": "Conexões Netty Ativas", "hint": "Requisições simultâneas em processamento assíncrono."},
+    "reactor_netty_connection_provider_active_connections": {"title": "Pool Netty Ativo", "hint": "Conexões reativas utilizadas simultaneamente pelo cliente webflux/banco de dados."},
+}
+
+def get_detail_info(metric_name):
+    for prefix, info in DETAIL_HINTS.items():
+        if metric_name.startswith(prefix):
+            return info
+    return {"title": metric_name, "hint": "Métrica complementar para análise avançada de infraestrutura e comportamento da JVM."}
+
+
+# ─── Dictionary of detailed hints ──────────────────────────────────────────
+DETAIL_HINTS = {
+    "http_server_requests_seconds_count": {"title": "Requisições HTTP (Servidor)", "hint": "Total de requisições recebidas pelo servidor. Indica o volume de tráfego bruto no backend."},
+    "http_server_requests_seconds_sum": {"title": "Tempo Total de Requisições HTTP", "hint": "Tempo cumulativo gasto processando requisições. Útil para calcular latência média ao cruzar com o total."},
+    "http_server_requests_active_seconds_bucket": {"title": "Histograma de Requisições Ativas", "hint": "Distribuição das requisições simultâneas em andamento."},
+    "http_server_requests_active_seconds_gsum": {"title": "Soma de Requisições Ativas", "hint": "Tempo total gasto por requisições ativas. Picos indicam acúmulo de processamento pendente."},
+    "http_server_errors": {"title": "Erros HTTP", "hint": "Contador de falhas 4xx/5xx devolvidas pelo servidor."},
+    "image_processed_bytes_total": {"title": "Bytes Processados", "hint": "Quantidade total de bytes de imagem trafegados. Define o throughput real de dados do negócio."},
+    "image_cache_hits_total": {"title": "Taxa de Acerto de Cache", "hint": "Quantas imagens foram servidas diretamente da memória sem reprocessamento."},
+    "k6_http_reqs_total": {"title": "Requisições Disparadas (k6)", "hint": "Volume de requisições geradas pelo k6. Se divergir do servidor, indica gargalos de rede ou conexões dropadas."},
+    "k6_http_req_duration_p99": {"title": "Latência P99", "hint": "Tempo total p99 percebido pelo cliente. 99% das requisições foram mais rápidas que este valor."},
+    "k6_http_req_waiting_p99": {"title": "Tempo de Fila / TTFB (P99)", "hint": "Tempo de Espera (Time To First Byte). Picos indicam que o servidor demorou a aceitar/iniciar o processamento."},
+    "k6_http_req_failed": {"title": "Taxa de Falha do Cliente", "hint": "Percentual de requisições que retornaram erro não-200 sob a ótica do k6."},
+    "k6_vus": {"title": "Usuários Virtuais (VUs)", "hint": "Número de VUs ativos injetando carga no momento."},
+    "jvm_memory_used_bytes": {"title": "Uso de Memória Heap", "hint": "Quantidade de RAM ativa usada pelo Java. Subidas em escada indicam alocação constante até a limpeza do GC."},
+    "jvm_threads_live_threads": {"title": "Threads Ativas", "hint": "Quantidade de threads vivas na JVM. No WebFlux deve ser baixo (~20); no Tomcat MVC escala com o tráfego."},
+    "jvm_gc_pause_seconds_max": {"title": "Pausas Máximas do GC", "hint": "Pior cenário de parada da aplicação (Stop-The-World). Afeta diretamente o P99 de latência."},
+    "jvm_gc_pause_seconds_count": {"title": "Frequência do GC", "hint": "Número de coletas de lixo. Se rodar muito frequentemente, o sistema perde CPU processando lixo em vez de requisições."},
+    "jvm_gc_pause_seconds_sum": {"title": "Tempo Total em GC", "hint": "Custo temporal acumulado gasto pelo Garbage Collector."},
+    "process_cpu_usage": {"title": "Uso de CPU", "hint": "Percentual de uso da CPU pelo processo Java. Importante para correlacionar com saturação e throughput."},
+    "process_resident_memory_bytes": {"title": "Memória Residente (RSS)", "hint": "Tamanho real alocado na RAM física para todo o processo, incluindo heap, metaspace e off-heap (Netty)."},
+    "container_memory_working_set_bytes": {"title": "Memória do Container", "hint": "Consumo de RAM visto pelo Docker. É a métrica oficial para disparar OOM Kill (Out Of Memory)."},
+    "container_cpu_cfs_throttled_periods_total": {"title": "Limitação de CPU (Throttling)", "hint": "Períodos em que o container estourou sua cota de CPU do cgroups e foi paralisado forçadamente."},
+    "container_cpu_cfs_throttled_seconds_total": {"title": "Tempo de Throttling", "hint": "Soma de segundos perdidos com o container \"congelado\" pelo Docker/Kubernetes por excesso de uso de CPU."},
+    "tomcat_threads_current_threads": {"title": "Threads do Tomcat", "hint": "Threads do pool do Tomcat. Se chegar no limite (ex: 200), novas conexões ficam na fila."},
+    "tomcat_connections_current_connections": {"title": "Conexões Tomcat", "hint": "Quantidade de sockets abertos atendendo requisições bloqueantes."},
+    "reactor_netty_http_server_connections_active": {"title": "Conexões Netty Ativas", "hint": "Requisições simultâneas em processamento assíncrono."},
+    "reactor_netty_connection_provider_active_connections": {"title": "Pool Netty Ativo", "hint": "Conexões reativas utilizadas simultaneamente pelo cliente webflux/banco de dados."},
+}
+
+def get_detail_info(metric_name):
+    for prefix, info in DETAIL_HINTS.items():
+        if metric_name.startswith(prefix):
+            return info
+    return {"title": metric_name, "hint": "Métrica complementar para análise avançada de infraestrutura e comportamento da JVM."}
+
 ALLOWED_DETAIL_PREFIXES = [
     # HTTP e Negócio
     "http_server_requests",
@@ -526,11 +600,22 @@ def build_html(
         for m in metrics:
             nav_links += f'  <a class="nav-metric" href="#{m}">{m}</a>\n'
 
-        cards_html += f'<div class="group-header" id="{group_id}">{group_name}</div>\n<div class="grid">\n'
+        cards_html += f'<div class="group-header" id="{group_id}">{group_name}</div>\n<div class="grid grid-primary">\n'
         for m in metrics:
             b64 = metric_charts.get(m)
             if b64:
-                cards_html += f'<div class="card" id="{m}"><img src="data:image/png;base64,{b64}" alt="{m}" loading="lazy"></div>\n'
+                info = get_detail_info(m)
+                title = info["title"]
+                hint = info["hint"]
+                cards_html += f'''<div class="card card-vital" id="{m}">
+  <div class="vital-caption">
+    <span class="vital-title">{title}</span>
+    <code class="vital-tech">{m}</code>
+    <p class="vital-hint">{hint}</p>
+  </div>
+  <img src="data:image/png;base64,{b64}" alt="{m}" loading="lazy">
+</div>
+'''
         cards_html += '</div>\n'
 
     primary_section = ''
